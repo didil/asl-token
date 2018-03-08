@@ -6,14 +6,19 @@ npm i -g truffle
 npm i -g ganache-cli
 ```
 
-Run ganache-cli
-```
-ganache-cli -e 1000000
-```
-
 Install packages
 ```
 npm install
+```
+
+Init truffle config
+```
+cp truffle.js.example truffle.js
+```
+
+Run ganache-cli
+```
+ganache-cli -e 1000000
 ```
 
 Run tests
