@@ -3,7 +3,7 @@ pragma solidity ^0.4.18;
 
 import "../ownership/Ownable.sol";
 
-
+// https://github.com/OpenZeppelin/zeppelin-solidity/blob/c5d66183abcb63a90a2528b8333b2b17067629fc/contracts/lifecycle/Pausable.sol
 /**
  * @title Pausable
  * @dev Base contract which allows children to implement an emergency stop mechanism.

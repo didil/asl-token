@@ -1,10 +1,9 @@
 pragma solidity ^0.4.18;
 
+import "./BasicToken.sol";
+import "./ERC20.sol";
 
-import './BasicToken.sol';
-import './ERC20.sol';
-
-
+// https://github.com/OpenZeppelin/zeppelin-solidity/blob/c5d66183abcb63a90a2528b8333b2b17067629fc/contracts/token/ERC20/StandardToken.sol
 /**
  * @title Standard ERC20 token
  *

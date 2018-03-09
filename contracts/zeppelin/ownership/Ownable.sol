@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-
+// https://github.com/OpenZeppelin/zeppelin-solidity/blob/c5d66183abcb63a90a2528b8333b2b17067629fc/contracts/ownership/Ownable.sol
 /**
  * @title Ownable
  * @dev The Ownable contract has an owner address, and provides basic authorization control
@@ -21,7 +21,6 @@ contract Ownable {
     owner = msg.sender;
   }
 
-
   /**
    * @dev Throws if called by any account other than the owner.
    */
@@ -29,7 +28,6 @@ contract Ownable {
     require(msg.sender == owner);
     _;
   }
-
 
   /**
    * @dev Allows the current owner to transfer control of the contract to a newOwner.

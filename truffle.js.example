@@ -7,6 +7,22 @@ module.exports = {
       gas: 5000000,
       gasPrice: 0.1 * 10 ** 9,
     },
+    kovan: {
+      host: "localhost",
+      port: 8545,
+      network_id: 42,
+      from: "MY_ADDRESS",
+      gas: 5000000,
+      gasPrice: 10 * 10 ** 9,
+    },
+    live: {
+      host: "localhost",
+      port: 8545,
+      network_id: 1,
+      from: "MY_ADDRESS",
+      gas: 5000000,
+      gasPrice: 10 * 10 ** 9,
+    },
   },
   solc: {
     optimizer: {
