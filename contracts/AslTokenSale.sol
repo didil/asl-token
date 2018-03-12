@@ -23,6 +23,7 @@ contract AslTokenSale is Pausable {
   mapping(address => Supporter) public supportersMap; // Mapping with all the Token Sale participants (Private excluded)
   AslToken public token; // ERC20 Token contract address
   address public vaultWallet; // Wallet address to which ETH any Unsold/Company Reserve Tokens get forwarded to
+  address public kycWallet; // Wallet address for the KYC server
   uint256 public tokensSold; // How many tokens sold have been sold in total
   uint256 public weiRaised; // Total amount of raised money in Wei
   uint256 public maxTxGasPrice; // Maximum transaction gas price allowed for fair-chance transactions
@@ -42,6 +43,14 @@ contract AslTokenSale is Pausable {
 
   /* Rate */
   uint256 public constant TOKEN_RATE_BASE_RATE = 10625; // Base Price
+
+  /**
+    * @dev Modifier to only allow Owner or KYC Wallet to execute a function
+    */
+  modifier onlyOwnerOrKYCWallet() {
+    require(msg.sender == owner || msg.sender == kycWallet);
+    _;
+  }
 
   /**
   * Event for token purchase logging
@@ -68,18 +77,22 @@ contract AslTokenSale is Pausable {
   /**
    * Constructor
    * @param _vaultWallet Vault address
+   * @param _kycWallet KYC address
    * @param _maxTxGasPrice Maximum gas price allowed when buying tokens
    */
   function AslTokenSale(
     address _vaultWallet,
+    address _kycWallet,
     uint256 _maxTxGasPrice
   )
   public
   {
     require(_vaultWallet != address(0));
+    require(_kycWallet != address(0));
     require(_maxTxGasPrice > 0);
 
     vaultWallet = _vaultWallet;
+    kycWallet = _kycWallet;
     maxTxGasPrice = _maxTxGasPrice;
 
     token = new AslToken();
@@ -230,7 +243,7 @@ contract AslTokenSale is Pausable {
   * @dev Approve user's KYC
   * @param _user User Address
   */
-  function approveUserKYC(address _user) onlyOwner public {
+  function approveUserKYC(address _user) onlyOwnerOrKYCWallet public {
     require(_user != address(0));
 
     Supporter storage sup = supportersMap[_user];
@@ -242,7 +255,7 @@ contract AslTokenSale is Pausable {
    * @dev Disapprove user's KYC
    * @param _user User Address
    */
-  function disapproveUserKYC(address _user) onlyOwner public {
+  function disapproveUserKYC(address _user) onlyOwnerOrKYCWallet public {
     require(_user != address(0));
 
     Supporter storage sup = supportersMap[_user];

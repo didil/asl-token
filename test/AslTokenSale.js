@@ -37,12 +37,13 @@ const TOTAL_TOKENS_SUPPLY = new BigNumber(1200).mul(MILLION).mul(TO_TOKEN_DECIMA
 contract('AslTokenSale', async function (accounts) {
   const WALLET_OWNER = accounts[0];
   const WALLET_VAULT = accounts[1];
-  
-  const WALLET_INVESTOR_1 = accounts[2];
-  const WALLET_INVESTOR_2 = accounts[3];
-  const WALLET_INVESTOR_3 = accounts[4];
-  const WALLET_INVESTOR_4 = accounts[5];
-  const WALLET_INVESTOR_5 = accounts[6];
+  const WALLET_KYC = accounts[2];
+
+  const WALLET_INVESTOR_1 = accounts[3];
+  const WALLET_INVESTOR_2 = accounts[4];
+  const WALLET_INVESTOR_3 = accounts[5];
+  const WALLET_INVESTOR_4 = accounts[6];
+  const WALLET_INVESTOR_5 = accounts[7];
 
   let tokenSaleInstance;
   let tokenInstance;
@@ -87,15 +88,19 @@ contract('AslTokenSale', async function (accounts) {
 
   describe('Contract tests', function () {
     it('Should reject deploying the Token Sale contract with no vault wallet', async function () {
-      await AslTokenSale.new(null, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(null, WALLET_KYC, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should reject deploying the Token Sale contract with no kyc wallet', async function () {
+      await AslTokenSale.new(WALLET_VAULT, null, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no Max Tx Gas Price', async function () {
-      await AslTokenSale.new(WALLET_VAULT,  0).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_KYC, 0).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should deploy the Token Sale contract', async function () {
-      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT,  MAX_TX_GAS_PRICE);
+      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT,WALLET_KYC,  MAX_TX_GAS_PRICE);
       tokenInstance = AslToken.at(await tokenSaleInstance.token());
 
       const owner = await tokenSaleInstance.owner();
@@ -127,20 +132,20 @@ contract('AslTokenSale', async function (accounts) {
       await tokenSaleInstance.finishContract({ from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
     
-    it('Should not approve KYC when executing from non-owner', async function () {
+    it('Should not approve KYC when executing from unallowed walled', async function () {
       await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_1, { from: WALLET_INVESTOR_2 }).should.be.rejectedWith(EVMThrow);
     });
 
-    it('Should revert when invoking approveUserKYC with an empty wallet', async function () {
-      await tokenSaleInstance.approveUserKYC(new BigNumber(0), { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+    it('Should revert when invoking approveUserKYC with a null wallet', async function () {
+      await tokenSaleInstance.approveUserKYC(null, { from: WALLET_KYC }).should.be.rejectedWith(EVMThrow);
     });
 
-    it('Should revert when invoking disapproveUserKYC with an empty wallet', async function () {
-      await tokenSaleInstance.disapproveUserKYC(new BigNumber(0), { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+    it('Should revert when invoking disapproveUserKYC with a null wallet', async function () {
+      await tokenSaleInstance.disapproveUserKYC(null, { from: WALLET_KYC }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should approve KYC of investor 1', async function () {
-      await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_1, { from: WALLET_OWNER });
+      await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_1, { from: WALLET_KYC });
       const userHasKyc = await tokenSaleInstance.userHasKYC(WALLET_INVESTOR_1);
       assert.equal(userHasKyc, true, "KYC has not been flagged");
     });
@@ -232,7 +237,7 @@ contract('AslTokenSale', async function (accounts) {
 
 
     it('Should approve KYC of the 2nd investor wallet and read the KYC logs', async function () {
-      const { logs } = await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_2, { from: WALLET_OWNER });
+      const { logs } = await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_2, { from: WALLET_KYC });
       const userHasKyc = await tokenSaleInstance.userHasKYC(WALLET_INVESTOR_2);
       assert.equal(userHasKyc, true, "KYC has not been flagged");
 
@@ -244,7 +249,7 @@ contract('AslTokenSale', async function (accounts) {
     });
 
     it('Should disapprove KYC of the 2nd investor wallet and read the KYC logs', async function () {
-      const { logs } = await tokenSaleInstance.disapproveUserKYC(WALLET_INVESTOR_2, { from: WALLET_OWNER });
+      const { logs } = await tokenSaleInstance.disapproveUserKYC(WALLET_INVESTOR_2, { from: WALLET_KYC });
       const userHasKyc = await tokenSaleInstance.userHasKYC(WALLET_INVESTOR_2);
       assert.equal(userHasKyc, false, "KYC has not been disaproved");
 
@@ -383,7 +388,7 @@ contract('AslTokenSale', async function (accounts) {
     });
 
     it('Should approve KYC of investor 4', async function () {
-      await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_4, { from: WALLET_OWNER });
+      await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_4, { from: WALLET_KYC });
       const userHasKyc = await tokenSaleInstance.userHasKYC(WALLET_INVESTOR_4);
       assert.equal(userHasKyc, true, "KYC has not been flagged");
     });
@@ -471,6 +476,10 @@ contract('AslTokenSale', async function (accounts) {
 
     it('Should buy 1 ETH worth of tokens', async function () {
       const tokens = await doBuy(tokenSaleInstance, WALLET_INVESTOR_1, ONE_ETH, TOKEN_RATE_BASE_RATE);
+    });
+
+    it('Should reject transfers until end of crowdsale', async function () {
+      await tokenInstance.transfer(WALLET_INVESTOR_2, new BigNumber(100).mul(TO_WEI), { from: WALLET_INVESTOR_1 }).should.be.rejectedWith(EVMThrow);
     });
 
     it('calling buyTokens directly also works', async function () {

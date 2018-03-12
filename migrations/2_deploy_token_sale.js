@@ -11,10 +11,15 @@ module.exports = function (deployer, network) {
   if (!vaultAddress) {
     throw new Error("Vault Address not set");
   }
+  console.log("Using Vault Address:", vaultAddress);
+
+  let kycAddress = process.env.KYC_ADDRESS;
+  if (!kycAddress) {
+    throw new Error("KYC Address not set");
+  }
+  console.log("Using KYC Address:", kycAddress);
 
   let maxTxGasPrice = 50 * 10 ** 9; // 50 GWei
 
-  console.log("Using Vault Address:", vaultAddress);
-
-  return deployer.deploy(AslTokenSale, vaultAddress, maxTxGasPrice);
+  return deployer.deploy(AslTokenSale, vaultAddress, kycAddress, maxTxGasPrice);
 };
