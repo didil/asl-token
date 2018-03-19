@@ -37,13 +37,14 @@ const TOTAL_TOKENS_SUPPLY = new BigNumber(1200).mul(MILLION).mul(TO_TOKEN_DECIMA
 contract('AslTokenSale', async function (accounts) {
   const WALLET_OWNER = accounts[0];
   const WALLET_VAULT = accounts[1];
-  const WALLET_KYC = accounts[2];
+  const WALLET_AIRDROP = accounts[2];
+  const WALLET_KYC = accounts[3];
 
-  const WALLET_INVESTOR_1 = accounts[3];
-  const WALLET_INVESTOR_2 = accounts[4];
-  const WALLET_INVESTOR_3 = accounts[5];
-  const WALLET_INVESTOR_4 = accounts[6];
-  const WALLET_INVESTOR_5 = accounts[7];
+  const WALLET_INVESTOR_1 = accounts[4];
+  const WALLET_INVESTOR_2 = accounts[5];
+  const WALLET_INVESTOR_3 = accounts[6];
+  const WALLET_INVESTOR_4 = accounts[7];
+  const WALLET_INVESTOR_5 = accounts[8];
 
   let tokenSaleInstance;
   let tokenInstance;
@@ -54,7 +55,6 @@ contract('AslTokenSale', async function (accounts) {
     const tokenInstance = AslToken.at(await tokenSaleInstance.token());
 
     const preUserTokenBalance = await tokenInstance.balanceOf(acc);
-    const preUserWeiSpent = await tokenSaleInstance.userWeiSpent(acc);
     const preFundBalance = web3.eth.getBalance(WALLET_VAULT);
     const preTokensSold = await tokenSaleInstance.tokensSold();
     const preTotalSupply = await tokenInstance.totalSupply();
@@ -67,9 +67,6 @@ contract('AslTokenSale', async function (accounts) {
     const postUserTokenBalance = await tokenInstance.balanceOf(acc);
     postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought);
 
-    // check wei spent
-    const postUserWeiSpent = await tokenSaleInstance.userWeiSpent(acc);
-    postUserWeiSpent.sub(preUserWeiSpent).should.be.bignumber.equal(weiAmount);
 
     // check funds forwarded
     const postFundBalance = web3.eth.getBalance(WALLET_VAULT);
@@ -88,19 +85,27 @@ contract('AslTokenSale', async function (accounts) {
 
   describe('Contract tests', function () {
     it('Should reject deploying the Token Sale contract with no vault wallet', async function () {
-      await AslTokenSale.new(null, WALLET_KYC, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(null, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should reject deploying the Token Sale contract with no airdrop wallet', async function () {
+      await AslTokenSale.new(WALLET_VAULT, null, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no kyc wallet', async function () {
-      await AslTokenSale.new(WALLET_VAULT, null, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, null, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should reject deploying the Token Sale contract with no base rate', async function () {
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, 0, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no Max Tx Gas Price', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_KYC, 0).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, 0).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should deploy the Token Sale contract', async function () {
-      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT,WALLET_KYC,  MAX_TX_GAS_PRICE);
+      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE);
       tokenInstance = AslToken.at(await tokenSaleInstance.token());
 
       const owner = await tokenSaleInstance.owner();
@@ -108,6 +113,12 @@ contract('AslTokenSale', async function (accounts) {
 
       const vaultWallet = await tokenSaleInstance.vaultWallet();
       vaultWallet.should.equal(WALLET_VAULT);
+
+      const airdropWallet = await tokenSaleInstance.airdropWallet();
+      airdropWallet.should.equal(WALLET_AIRDROP);
+
+      const tokenBaseRate = await tokenSaleInstance.tokenBaseRate();
+      tokenBaseRate.should.be.bignumber.equal(TOKEN_RATE_BASE_RATE);
     });
 
     //
@@ -117,13 +128,13 @@ contract('AslTokenSale', async function (accounts) {
     it('Should have correct state after deploy', async function () {
       const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
       const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
-      const isTokenSaleRunning = await tokenSaleInstance.isTokenSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
       const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
       const hasEnded = await tokenSaleInstance.hasEnded();
 
       assert.equal(isPrivateSaleRunning, true, "Contract is not on Private state");
       assert.equal(isPreSaleRunning, false, "Contract is on PreSale state");
-      assert.equal(isTokenSaleRunning, false, "Contract is on TokenSaleRunning state");
+      assert.equal(isPublicTokenSaleRunning, false, "Contract is on PublicTokenSaleRunning state");
       assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
       assert.equal(hasEnded, false, "Has Ended should be false");
     });
@@ -131,7 +142,7 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject calling finishContract() before main sale', async function () {
       await tokenSaleInstance.finishContract({ from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
-    
+
     it('Should not approve KYC when executing from unallowed walled', async function () {
       await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_1, { from: WALLET_INVESTOR_2 }).should.be.rejectedWith(EVMThrow);
     });
@@ -150,6 +161,16 @@ contract('AslTokenSale', async function (accounts) {
       assert.equal(userHasKyc, true, "KYC has not been flagged");
     });
 
+    it('switch KYC wallet to owner and back', async function () {
+      await tokenSaleInstance.updateKYCWallet(WALLET_OWNER, { from: WALLET_OWNER });
+      let kycWallet = await tokenSaleInstance.kycWallet();
+      assert.equal(kycWallet, WALLET_OWNER, "KYC not set properly");
+
+      await tokenSaleInstance.updateKYCWallet(WALLET_KYC, { from: WALLET_OWNER });
+      kycWallet = await tokenSaleInstance.kycWallet();
+      assert.equal(kycWallet, WALLET_KYC, "KYC not set properly");
+    });
+
     it('Should reject buying before presale', async function () {
       await tokenSaleInstance.sendTransaction({
         value: PRE_SALE_WEI_MIN_TX,
@@ -160,20 +181,17 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject reserving tokens from non-owner', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
-      await tokenSaleInstance.reserveTokens(amount, user, { from: WALLET_INVESTOR_1 }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_INVESTOR_1 }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reserve tokens', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
 
-      await tokenSaleInstance.reserveTokens(amount, user, { from: WALLET_OWNER });
+      await tokenSaleInstance.reserveTokens(user, amount,  { from: WALLET_OWNER });
 
       const userTokenBalance = await tokenInstance.balanceOf(user);
       userTokenBalance.should.be.bignumber.equal(amount);
-
-      const userWeiSpent = await tokenSaleInstance.userWeiSpent(user);
-      userWeiSpent.toNumber().should.eq(0);
 
       const tokensSold = await tokenSaleInstance.tokensSold();
       tokensSold.should.be.bignumber.equal(amount);
@@ -187,7 +205,7 @@ contract('AslTokenSale', async function (accounts) {
       const tokensSold = await tokenSaleInstance.tokensSold();
       let amount = PRE_SALE_TOKEN_CAP.sub(tokensSold).add(1);
 
-      await tokenSaleInstance.reserveTokens(amount, user, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user,amount,  { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     //
@@ -199,13 +217,45 @@ contract('AslTokenSale', async function (accounts) {
 
       const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
       const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
-      const isTokenSaleRunning = await tokenSaleInstance.isTokenSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
       const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
       const hasEnded = await tokenSaleInstance.hasEnded();
 
       assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
       assert.equal(isPreSaleRunning, true, "Contract is not on PreSale state");
-      assert.equal(isTokenSaleRunning, true, "Contract is not on TokenSaleRunning state");
+      assert.equal(isPublicTokenSaleRunning, true, "Contract is not on PublicTokenSaleRunning state");
+      assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
+      assert.equal(hasEnded, false, "Has Ended should be false");
+    });
+
+    it('Should move back to private', async function () {
+      await tokenSaleInstance.goBackToPrivateSale({ from: WALLET_OWNER });
+
+      const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
+      const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
+      const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
+      const hasEnded = await tokenSaleInstance.hasEnded();
+
+      assert.equal(isPrivateSaleRunning, true, "Contract is not on Private state");
+      assert.equal(isPreSaleRunning, false, "Contract is on PreSale state");
+      assert.equal(isPublicTokenSaleRunning, false, "Contract is on PublicTokenSaleRunning state");
+      assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
+      assert.equal(hasEnded, false, "Has Ended should be false");
+    });
+
+    it('Should move again to PreSale', async function () {
+      await tokenSaleInstance.startPreSale({ from: WALLET_OWNER });
+
+      const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
+      const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
+      const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
+      const hasEnded = await tokenSaleInstance.hasEnded();
+
+      assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
+      assert.equal(isPreSaleRunning, true, "Contract is not on PreSale state");
+      assert.equal(isPublicTokenSaleRunning, true, "Contract is not on PublicTokenSaleRunning state");
       assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
       assert.equal(hasEnded, false, "Has Ended should be false");
     });
@@ -370,13 +420,45 @@ contract('AslTokenSale', async function (accounts) {
 
       const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
       const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
-      const isTokenSaleRunning = await tokenSaleInstance.isTokenSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
       const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
       const hasEnded = await tokenSaleInstance.hasEnded();
 
       assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
       assert.equal(isPreSaleRunning, false, "Contract is on PreSale state");
-      assert.equal(isTokenSaleRunning, true, "Contract is not on TokenSaleRunning state");
+      assert.equal(isPublicTokenSaleRunning, true, "Contract is not on PublicTokenSaleRunning state");
+      assert.equal(isMainSaleRunning, true, "Contract is not on MainSaleRunning state");
+      assert.equal(hasEnded, false, "Has Ended should be false");
+    });
+
+    it('Should move back to PreSale', async function () {
+      await tokenSaleInstance.goBackToPreSale({ from: WALLET_OWNER });
+
+      const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
+      const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
+      const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
+      const hasEnded = await tokenSaleInstance.hasEnded();
+
+      assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
+      assert.equal(isPreSaleRunning, true, "Contract is not on PreSale state");
+      assert.equal(isPublicTokenSaleRunning, true, "Contract is not on PublicTokenSaleRunning state");
+      assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
+      assert.equal(hasEnded, false, "Has Ended should be false");
+    });
+
+    it('Should move again to the Main Sale', async function () {
+      await tokenSaleInstance.startMainSale({ from: WALLET_OWNER });
+
+      const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
+      const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
+      const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
+      const hasEnded = await tokenSaleInstance.hasEnded();
+
+      assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
+      assert.equal(isPreSaleRunning, false, "Contract is on PreSale state");
+      assert.equal(isPublicTokenSaleRunning, true, "Contract is not on PublicTokenSaleRunning state");
       assert.equal(isMainSaleRunning, true, "Contract is not on MainSaleRunning state");
       assert.equal(hasEnded, false, "Has Ended should be false");
     });
@@ -384,7 +466,7 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject reserving tokens after presale ended', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
-      await tokenSaleInstance.reserveTokens(amount, user, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens( user,amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should approve KYC of investor 4', async function () {
@@ -520,7 +602,7 @@ contract('AslTokenSale', async function (accounts) {
 
     it('Should call finishContract', async function () {
       const tokensSold = await tokenSaleInstance.tokensSold();
-      const notSoldTokens = TOKEN_SALE_TOKEN_CAP.sub(tokensSold).truncated();
+      const unsoldTokens = TOKEN_SALE_TOKEN_CAP.sub(tokensSold).truncated();
       const companyReserveTokens = TOTAL_TOKENS_SUPPLY.sub(TOKEN_SALE_TOKEN_CAP);
 
       await tokenSaleInstance.finishContract({ from: WALLET_OWNER });
@@ -528,9 +610,13 @@ contract('AslTokenSale', async function (accounts) {
       const tokenContractOwner = await tokenInstance.owner();
       assert.equal(tokenContractOwner, WALLET_OWNER, "Token should be owned by owner wallet after contract finish");
 
-      // check balance of tokens on vault wallet, should have Not Sold Tokens + Company Reserve Tokens
+      // check balance of tokens on vault wallet, should have unsold Tokens
       const vaultBalance = await tokenInstance.balanceOf(WALLET_VAULT);
-      assert.equal(vaultBalance.toString(10), notSoldTokens.add(companyReserveTokens).toString(10) , "Vault wallet final balance is wrong");
+      assert.equal(vaultBalance.toString(10), unsoldTokens.toString(10), "Vault wallet final balance is wrong");
+
+      // check balance of tokens on airdrop wallet, should have Company Reserve Tokens
+      const airdropWalletBalance = await tokenInstance.balanceOf(WALLET_AIRDROP);
+      assert.equal(airdropWalletBalance.toString(10), companyReserveTokens.toString(10), "Airdrop wallet final balance is wrong");
 
       // check all supply has been minted
       const totalSupply = await tokenInstance.totalSupply();
@@ -539,13 +625,13 @@ contract('AslTokenSale', async function (accounts) {
       // check states
       const isPrivateSaleRunning = await tokenSaleInstance.isPrivateSaleRunning();
       const isPreSaleRunning = await tokenSaleInstance.isPreSaleRunning();
-      const isTokenSaleRunning = await tokenSaleInstance.isTokenSaleRunning();
+      const isPublicTokenSaleRunning = await tokenSaleInstance.isPublicTokenSaleRunning();
       const isMainSaleRunning = await tokenSaleInstance.isMainSaleRunning();
       const hasEnded = await tokenSaleInstance.hasEnded();
 
       assert.equal(isPrivateSaleRunning, false, "Contract is on Private state");
       assert.equal(isPreSaleRunning, false, "Contract is on PreSale state");
-      assert.equal(isTokenSaleRunning, false, "Contract is on TokenSaleRunning state");
+      assert.equal(isPublicTokenSaleRunning, false, "Contract is on PublicTokenSaleRunning state");
       assert.equal(isMainSaleRunning, false, "Contract is on MainSaleRunning state");
       assert.equal(hasEnded, true, "Has Ended should be true");
     });
@@ -564,7 +650,7 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject reserving tokens after sale ends', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
-      await tokenSaleInstance.reserveTokens(amount, user, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user, amount,  { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject calling transfer with empty wallet', async function () {

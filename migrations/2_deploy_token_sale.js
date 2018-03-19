@@ -13,6 +13,12 @@ module.exports = function (deployer, network) {
   }
   console.log("Using Vault Address:", vaultAddress);
 
+  let airdropAddress = process.env.AIRDROP_ADDRESS;
+  if (!airdropAddress) {
+    throw new Error("Airdrop Address not set");
+  }
+  console.log("Using Airdrop Address:", airdropAddress);
+
   let kycAddress = process.env.KYC_ADDRESS;
   if (!kycAddress) {
     throw new Error("KYC Address not set");
@@ -21,5 +27,5 @@ module.exports = function (deployer, network) {
 
   let maxTxGasPrice = 50 * 10 ** 9; // 50 GWei
 
-  return deployer.deploy(AslTokenSale, vaultAddress, kycAddress, maxTxGasPrice);
+  return deployer.deploy(AslTokenSale, vaultAddress, airdropAddress, kycAddress, maxTxGasPrice);
 };

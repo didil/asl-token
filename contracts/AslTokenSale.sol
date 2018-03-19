@@ -10,7 +10,6 @@ contract AslTokenSale is Pausable {
   * @dev Supporter struct to allow tracking amount spent by user and if he passed KYC
   */
   struct Supporter {
-    uint256 weiSpent; // the total amount of Wei this address has sent to this contract
     bool hasKYC; // if the user has passed KYC
   }
 
@@ -22,10 +21,10 @@ contract AslTokenSale is Pausable {
   // Variables
   mapping(address => Supporter) public supportersMap; // Mapping with all the Token Sale participants (Private excluded)
   AslToken public token; // ERC20 Token contract address
-  address public vaultWallet; // Wallet address to which ETH any Unsold/Company Reserve Tokens get forwarded to
+  address public vaultWallet; // Wallet address to which ETH and Company Reserve Tokens get forwarded
+  address public airdropWallet; // Wallet address to which Unsold Tokens get forwarded
   address public kycWallet; // Wallet address for the KYC server
   uint256 public tokensSold; // How many tokens sold have been sold in total
-  uint256 public weiRaised; // Total amount of raised money in Wei
   uint256 public maxTxGasPrice; // Maximum transaction gas price allowed for fair-chance transactions
   TokenSaleState public currentState; // current Sale state
 
@@ -36,13 +35,13 @@ contract AslTokenSale is Pausable {
   uint256 public constant MIN_ETHER = 0.1 ether; // Minimum ETH Contribution allowed during the crowd sale
 
   /* Minimum PreSale Contributions in Ether */
-  uint256 public constant PRE_SALE_MINIMUM = 1 ether; // Minimum to get 10% Bonus Tokens
+  uint256 public constant PRE_SALE_MIN_ETHER = 1 ether; // Minimum to get 10% Bonus Tokens
   uint256 public constant PRE_SALE_15_BONUS_MIN = 60 ether; // Minimum to get 15% Bonus Tokens
   uint256 public constant PRE_SALE_20_BONUS_MIN = 300 ether; // Minimum to get 20% Bonus Tokens
   uint256 public constant PRE_SALE_30_BONUS_MIN = 1200 ether; // Minimum to get 30% Bonus Tokens
 
   /* Rate */
-  uint256 public constant TOKEN_RATE_BASE_RATE = 10625; // Base Price
+  uint256 public tokenBaseRate; // Base rate
 
   /**
     * @dev Modifier to only allow Owner or KYC Wallet to execute a function
@@ -77,22 +76,30 @@ contract AslTokenSale is Pausable {
   /**
    * Constructor
    * @param _vaultWallet Vault address
+   * @param _airdropWallet Airdrop wallet address
    * @param _kycWallet KYC address
+   * @param _tokenBaseRate Token Base rate (Tokens/ETH)
    * @param _maxTxGasPrice Maximum gas price allowed when buying tokens
    */
   function AslTokenSale(
     address _vaultWallet,
+    address _airdropWallet,
     address _kycWallet,
+    uint256 _tokenBaseRate,
     uint256 _maxTxGasPrice
   )
   public
   {
     require(_vaultWallet != address(0));
+    require(_airdropWallet != address(0));
     require(_kycWallet != address(0));
+    require(_tokenBaseRate > 0);
     require(_maxTxGasPrice > 0);
 
     vaultWallet = _vaultWallet;
+    airdropWallet = _airdropWallet;
     kycWallet = _kycWallet;
+    tokenBaseRate = _tokenBaseRate;
     maxTxGasPrice = _maxTxGasPrice;
 
     token = new AslToken();
@@ -114,7 +121,7 @@ contract AslTokenSale is Pausable {
     require(tx.gasprice <= maxTxGasPrice);
 
     // make sure we're in pre or main sale period
-    require(isTokenSaleRunning());
+    require(isPublicTokenSaleRunning());
 
     // check if KYC ok
     require(userHasKYC(msg.sender));
@@ -127,27 +134,12 @@ contract AslTokenSale is Pausable {
 
     // calculate token amount
     uint256 bonusMultiplier = getBonusMultiplier(weiAmountSent);
-    uint256 newTokens = weiAmountSent.mul(TOKEN_RATE_BASE_RATE).mul(bonusMultiplier).div(100);
+    uint256 newTokens = weiAmountSent.mul(tokenBaseRate).mul(bonusMultiplier).div(100);
 
-    // check that we have not yet reached the cap
-    uint256 totalTokensSold = tokensSold.add(newTokens);
-    if (isMainSaleRunning()) {
-      require(totalTokensSold <= TOKEN_SALE_CAP);
-    } else if (isPreSaleRunning()) {
-      require(totalTokensSold <= PRE_SALE_TOKEN_CAP);
-    }
+    // check totals and mint the tokens
+    checkTotalsAndMintTokens(sender, newTokens);
 
-    // update supporter state
-    Supporter storage supporter = supportersMap[sender];
-    uint256 totalWei = supporter.weiSpent.add(weiAmountSent);
-    supporter.weiSpent = totalWei;
-
-    // update contract state
-    weiRaised = weiRaised.add(weiAmountSent);
-    tokensSold = totalTokensSold;
-
-    // mint the coins
-    token.mint(sender, newTokens);
+    // Log Event
     TokenPurchase(sender, weiAmountSent, newTokens);
 
     // forward the funds to the vault wallet
@@ -156,10 +148,10 @@ contract AslTokenSale is Pausable {
 
   /**
   * @dev Reserve Tokens
-  * @param _amount Amount of tokens
   * @param _wallet Destination Address
+  * @param _amount Amount of tokens
   */
-  function reserveTokens(uint _amount, address _wallet) public onlyOwner {
+  function reserveTokens(address _wallet, uint _amount) public onlyOwner {
     // check amount positive
     require(_amount > 0);
     // check destination address not null
@@ -168,18 +160,32 @@ contract AslTokenSale is Pausable {
     // make sure that we're in private sale or presale
     require(isPrivateSaleRunning() || isPreSaleRunning());
 
+    // check totals and mint the tokens
+    checkTotalsAndMintTokens(_wallet, _amount);
+
+    // Log Event
+    TokensReserved(_wallet, _amount);
+  }
+
+  /**
+  * @dev Check totals and Mint tokens
+  * @param _wallet Destination Address
+  * @param _amount Amount of tokens
+  */
+  function checkTotalsAndMintTokens(address _wallet, uint _amount) private {
+    // check that we have not yet reached the cap
     uint256 totalTokensSold = tokensSold.add(_amount);
-    // check that we're not passing the cap
-    require(totalTokensSold <= PRE_SALE_TOKEN_CAP);
+    if (isMainSaleRunning()) {
+      require(totalTokensSold <= TOKEN_SALE_CAP);
+    } else {
+      require(totalTokensSold <= PRE_SALE_TOKEN_CAP);
+    }
 
     // update contract state
     tokensSold = totalTokensSold;
 
-    // mint the coins
+    // mint the tokens
     token.mint(_wallet, _amount);
-
-    // Log Event
-    TokensReserved(_wallet, _amount);
   }
 
   /**
@@ -194,6 +200,17 @@ contract AslTokenSale is Pausable {
   }
 
   /**
+  * @dev Go back to private sale
+  */
+  function goBackToPrivateSale() public onlyOwner {
+    // make sure we're in the pre sale
+    require(currentState == TokenSaleState.Pre);
+
+    // go back to private
+    currentState = TokenSaleState.Private;
+  }
+
+  /**
   * @dev Start Main sale
   */
   function startMainSale() public onlyOwner {
@@ -205,22 +222,33 @@ contract AslTokenSale is Pausable {
   }
 
   /**
+  * @dev Go back to Presale
+  */
+  function goBackToPreSale() public onlyOwner {
+    // make sure we're in the main sale
+    require(currentState == TokenSaleState.Main);
+
+    // go back to presale
+    currentState = TokenSaleState.Pre;
+  }
+
+  /**
   * @dev Ends the operation of the contract
   */
   function finishContract() public onlyOwner {
-    // make sure we are in the main sale period
+    // make sure we're in the main sale
     require(currentState == TokenSaleState.Main);
 
     // mark sale as finished
     currentState = TokenSaleState.Finished;
 
-    // send the tokens not sold to the vault wallet
-    uint256 notSoldTokens = TOKEN_SALE_CAP.sub(tokensSold);
-    token.mint(vaultWallet, notSoldTokens);
+    // send the unsold tokens to the vault wallet
+    uint256 unsoldTokens = TOKEN_SALE_CAP.sub(tokensSold);
+    token.mint(vaultWallet, unsoldTokens);
 
-    // send the tokens not for sale to the vault wallet
+    // send the company reserve tokens to the airdrop wallet
     uint256 notForSaleTokens = TOTAL_TOKENS_SUPPLY.sub(TOKEN_SALE_CAP);
-    token.mint(vaultWallet, notForSaleTokens);
+    token.mint(airdropWallet, notForSaleTokens);
 
     // finish the minting of the token, so that transfers are allowed
     token.finishMinting();
@@ -237,6 +265,15 @@ contract AslTokenSale is Pausable {
   function updateMaxTxGasPrice(uint256 _newMaxTxGasPrice) public onlyOwner {
     require(_newMaxTxGasPrice > 0);
     maxTxGasPrice = _newMaxTxGasPrice;
+  }
+
+  /**
+   * @dev Updates the KYC Wallet address
+   * @param _kycWallet The new kyc wallet
+   */
+  function updateKYCWallet(address _kycWallet) public onlyOwner {
+    require(_kycWallet != address(0));
+    kycWallet = _kycWallet;
   }
 
   /**
@@ -267,35 +304,35 @@ contract AslTokenSale is Pausable {
   /**
   * @dev check if private sale is running
   */
-  function isPrivateSaleRunning() public constant returns (bool) {
+  function isPrivateSaleRunning() public view returns (bool) {
     return (currentState == TokenSaleState.Private);
   }
 
   /**
   * @dev check if pre sale or main sale are running
   */
-  function isTokenSaleRunning() public constant returns (bool) {
+  function isPublicTokenSaleRunning() public view returns (bool) {
     return (isPreSaleRunning() || isMainSaleRunning());
   }
 
   /**
   * @dev check if pre sale is running
   */
-  function isPreSaleRunning() public constant returns (bool) {
+  function isPreSaleRunning() public view returns (bool) {
     return (currentState == TokenSaleState.Pre);
   }
 
   /**
   * @dev check if main sale is running
   */
-  function isMainSaleRunning() public constant returns (bool) {
+  function isMainSaleRunning() public view returns (bool) {
     return (currentState == TokenSaleState.Main);
   }
 
   /**
   * @dev check if sale has ended
   */
-  function hasEnded() public constant returns (bool) {
+  function hasEnded() public view returns (bool) {
     return (currentState == TokenSaleState.Finished);
   }
 
@@ -303,23 +340,15 @@ contract AslTokenSale is Pausable {
   * @dev Check if user has passed KYC
   * @param _user User Address
   */
-  function userHasKYC(address _user) public constant returns (bool) {
+  function userHasKYC(address _user) public view returns (bool) {
     return supportersMap[_user].hasKYC;
-  }
-
-  /**
-   * @dev Returns the weiSpent of a user
-   * @param _user User Address
-   */
-  function userWeiSpent(address _user) public constant returns (uint256) {
-    return supportersMap[_user].weiSpent;
   }
 
   /**
    * @dev Returns the bonus multiplier to calculate the purchase rate
    * @param _weiAmount Purchase amount
    */
-  function getBonusMultiplier(uint256 _weiAmount) internal constant returns (uint256) {
+  function getBonusMultiplier(uint256 _weiAmount) internal view returns (uint256) {
     if (isMainSaleRunning()) {
       return 100;
     }
@@ -336,7 +365,7 @@ contract AslTokenSale is Pausable {
         // 15% bonus
         return 115;
       }
-      else if (_weiAmount >= PRE_SALE_MINIMUM) {
+      else if (_weiAmount >= PRE_SALE_MIN_ETHER) {
         // 10% bonus
         return 110;
       }
@@ -350,12 +379,12 @@ contract AslTokenSale is Pausable {
   /**
    * @dev Check if the user is buying above the required minimum
    */
-  function aboveMinimumPurchase() internal constant returns (bool) {
+  function aboveMinimumPurchase() internal view returns (bool) {
     if (isMainSaleRunning()) {
       return msg.value >= MIN_ETHER;
     }
     else if (isPreSaleRunning()) {
-      return msg.value >= PRE_SALE_MINIMUM;
+      return msg.value >= PRE_SALE_MIN_ETHER;
     } else {
       return false;
     }
