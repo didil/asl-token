@@ -25,7 +25,13 @@ module.exports = function (deployer, network) {
   }
   console.log("Using KYC Address:", kycAddress);
 
+  let tokenBaseRate = parseInt(process.env.TOKEN_BASE_RATE, 10);
+  if (!tokenBaseRate) {
+    throw new Error("Token Base Rate not set");
+  }
+  console.log("Using Token Base Rate:", tokenBaseRate);
+
   let maxTxGasPrice = 50 * 10 ** 9; // 50 GWei
 
-  return deployer.deploy(AslTokenSale, vaultAddress, airdropAddress, kycAddress, maxTxGasPrice);
+  return deployer.deploy(AslTokenSale, vaultAddress, airdropAddress, kycAddress, tokenBaseRate, maxTxGasPrice);
 };

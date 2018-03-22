@@ -242,13 +242,13 @@ contract AslTokenSale is Pausable {
     // mark sale as finished
     currentState = TokenSaleState.Finished;
 
-    // send the unsold tokens to the vault wallet
+    // send the unsold tokens to the airdrop wallet
     uint256 unsoldTokens = TOKEN_SALE_CAP.sub(tokensSold);
-    token.mint(vaultWallet, unsoldTokens);
+    token.mint(airdropWallet, unsoldTokens);
 
-    // send the company reserve tokens to the airdrop wallet
+    // send the company reserve tokens to the vault wallet
     uint256 notForSaleTokens = TOTAL_TOKENS_SUPPLY.sub(TOKEN_SALE_CAP);
-    token.mint(airdropWallet, notForSaleTokens);
+    token.mint(vaultWallet, notForSaleTokens);
 
     // finish the minting of the token, so that transfers are allowed
     token.finishMinting();

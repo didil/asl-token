@@ -1,4 +1,5 @@
 const EVMThrow = require("./support/EVMThrow");
+let airdrop = require('../lib/airdrop');
 
 const BigNumber = web3.BigNumber;
 const should = require('chai')
@@ -188,7 +189,7 @@ contract('AslTokenSale', async function (accounts) {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
 
-      await tokenSaleInstance.reserveTokens(user, amount,  { from: WALLET_OWNER });
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER });
 
       const userTokenBalance = await tokenInstance.balanceOf(user);
       userTokenBalance.should.be.bignumber.equal(amount);
@@ -205,7 +206,7 @@ contract('AslTokenSale', async function (accounts) {
       const tokensSold = await tokenSaleInstance.tokensSold();
       let amount = PRE_SALE_TOKEN_CAP.sub(tokensSold).add(1);
 
-      await tokenSaleInstance.reserveTokens(user,amount,  { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     //
@@ -466,7 +467,7 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject reserving tokens after presale ended', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
-      await tokenSaleInstance.reserveTokens( user,amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should approve KYC of investor 4', async function () {
@@ -610,13 +611,13 @@ contract('AslTokenSale', async function (accounts) {
       const tokenContractOwner = await tokenInstance.owner();
       assert.equal(tokenContractOwner, WALLET_OWNER, "Token should be owned by owner wallet after contract finish");
 
-      // check balance of tokens on vault wallet, should have unsold Tokens
-      const vaultBalance = await tokenInstance.balanceOf(WALLET_VAULT);
-      assert.equal(vaultBalance.toString(10), unsoldTokens.toString(10), "Vault wallet final balance is wrong");
-
-      // check balance of tokens on airdrop wallet, should have Company Reserve Tokens
+      // check balance of tokens on airdrop wallet, should have unsold Tokens
       const airdropWalletBalance = await tokenInstance.balanceOf(WALLET_AIRDROP);
-      assert.equal(airdropWalletBalance.toString(10), companyReserveTokens.toString(10), "Airdrop wallet final balance is wrong");
+      assert.equal(airdropWalletBalance.toString(10), unsoldTokens.toString(10), "Airdrop wallet final balance is wrong");
+
+      // check balance of tokens on vault wallet, should have Company Reserve Tokens
+      const vaultBalance = await tokenInstance.balanceOf(WALLET_VAULT);
+      assert.equal(vaultBalance.toString(10), companyReserveTokens.toString(10), "Vault wallet final balance is wrong");
 
       // check all supply has been minted
       const totalSupply = await tokenInstance.totalSupply();
@@ -650,7 +651,7 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject reserving tokens after sale ends', async function () {
       let user = WALLET_INVESTOR_5;
       let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
-      await tokenSaleInstance.reserveTokens(user, amount,  { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject calling transfer with empty wallet', async function () {
@@ -689,5 +690,100 @@ contract('AslTokenSale', async function (accounts) {
     it('Should reject minting 1 Token from the vault wallet (even though it owns the AslToken contract now)', async function () {
       await tokenInstance.mint(WALLET_INVESTOR_1, 1, { from: WALLET_VAULT }).should.be.rejectedWith(EVMThrow);
     });
+
   });
+
+  describe('Airdrop', function () {
+    let ownerAddresses, balances, airdropAmounts;
+    let initial_inv_1_balance, initial_inv_2_balance, initial_inv_4_balance, initial_inv_5_balance;
+    let final_inv_1_balance, final_inv_2_balance, final_inv_4_balance, final_inv_5_balance;
+    let initialAirdropWalletBalance;
+
+    it('Should give the correct list of token owners', async function () {
+      ownerAddresses = await airdrop.getFilteredOwnerAddresses(tokenSaleInstance, tokenInstance);
+
+      ownerAddresses.sort().should.deep.equal([WALLET_INVESTOR_1, WALLET_INVESTOR_2, WALLET_INVESTOR_4, WALLET_INVESTOR_5].sort());
+    });
+
+    it('Should give the correct balances', async function () {
+      balances = await airdrop.getBalances(tokenInstance, ownerAddresses);
+
+      Object.keys(balances).length.should.equal(4);
+
+      initial_inv_1_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_1);
+      balances[WALLET_INVESTOR_1].should.be.bignumber.equal(initial_inv_1_balance);
+
+      initial_inv_2_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_2);
+      balances[WALLET_INVESTOR_2].should.be.bignumber.equal(initial_inv_2_balance);
+
+      initial_inv_4_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_4);
+      balances[WALLET_INVESTOR_4].should.be.bignumber.equal(initial_inv_4_balance);
+
+      initial_inv_5_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_5);
+      balances[WALLET_INVESTOR_5].should.be.bignumber.equal(initial_inv_5_balance);
+    });
+
+    it('Should give the correct airdrop amounts', async function () {
+      initialAirdropWalletBalance = await tokenInstance.balanceOf(WALLET_AIRDROP);
+      let tokensSold = await tokenSaleInstance.tokensSold();
+
+      airdropAmounts = await airdrop.calculateAirDropAmounts(tokenSaleInstance, tokenInstance, balances);
+
+      Object.keys(airdropAmounts).length.should.equal(4);
+
+      // check new balances
+      airdropAmounts[WALLET_INVESTOR_1].target.toNumber().should.equal(initial_inv_1_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
+      airdropAmounts[WALLET_INVESTOR_2].target.toNumber().should.equal(initial_inv_2_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
+      airdropAmounts[WALLET_INVESTOR_4].target.toNumber().should.equal(initial_inv_4_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
+      airdropAmounts[WALLET_INVESTOR_5].target.toNumber().should.equal(initial_inv_5_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
+
+      // check totals almost equal (rounding issues, check we're ok to 99.9 % precision)
+      airdropAmounts[WALLET_INVESTOR_1].target
+        .add(airdropAmounts[WALLET_INVESTOR_2].target)
+        .add(airdropAmounts[WALLET_INVESTOR_4].target)
+        .add(airdropAmounts[WALLET_INVESTOR_5].target)
+        .sub(initialAirdropWalletBalance)
+        .div(initialAirdropWalletBalance).toNumber().should.be.below(0.001);
+    });
+
+    it('Should give the same results via getAirDropAmounts', async function () {
+      let _airdropAmounts = await airdrop.getAirDropAmounts(web3, tokenSaleInstance, tokenInstance);
+
+      (_airdropAmounts).should.deep.equal(airdropAmounts);
+    });
+
+    it('Should send the airdrop amounts', async function () {
+      await airdrop.distribute(web3, tokenSaleInstance, tokenInstance, airdropAmounts, 5 * 10 ** 9);
+
+      final_inv_1_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_1);
+      final_inv_1_balance.should.be.bignumber.equal(initial_inv_1_balance.add(airdropAmounts[WALLET_INVESTOR_1].target));
+
+      final_inv_2_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_2);
+      final_inv_2_balance.should.be.bignumber.equal(initial_inv_2_balance.add(airdropAmounts[WALLET_INVESTOR_2].target));
+
+      final_inv_4_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_4);
+      final_inv_4_balance.should.be.bignumber.equal(initial_inv_4_balance.add(airdropAmounts[WALLET_INVESTOR_4].target));
+
+      final_inv_5_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_5);
+      final_inv_5_balance.should.be.bignumber.equal(initial_inv_5_balance.add(airdropAmounts[WALLET_INVESTOR_5].target));
+
+      let finalAirdropBalance = await tokenInstance.balanceOf(WALLET_AIRDROP);
+
+      // check all airdrop distributed (rounding issues, check we're ok to 99.9 % precision)
+        finalAirdropBalance
+        .div(initialAirdropWalletBalance).toNumber().should.be.below(0.001);
+
+      // check amount distributed makes sense
+      initialAirdropWalletBalance
+        .sub(finalAirdropBalance)
+        .sub(final_inv_1_balance.sub(initial_inv_1_balance))
+        .sub(final_inv_2_balance.sub(initial_inv_2_balance))
+        .sub(final_inv_4_balance.sub(initial_inv_4_balance))
+        .sub(final_inv_5_balance.sub(initial_inv_5_balance))
+        .toNumber().should.equal(0);
+    });
+
+
+  });
+
 });
