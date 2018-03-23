@@ -32,3 +32,21 @@ To deploy to Testnet/Mainnet, set the proper network settings in truffle.js, the
 ```
 VAULT_ADDRESS=MY_VAULT_ADDRESS AIRDROP_ADDRESS=MY_AIRDROP_ADDRESS KYC_ADDRESS=MY_KYC_ADDRESS TOKEN_BASE_RATE=MY_TOKEN_BASE_RATE truffle migrate --network=kovan
 ```
+
+
+## Airdrop
+From the project root folder :
+
+1/ Calculate the airdrop amounts 
+```
+truffle exec truffle-scripts/airdrop-save-amounts.js 
+```
+
+this creates a file "airdrop-amounts-(timestamp).json" 
+
+2/ Run the distribution 
+```
+AIRDROP_AMOUNTS_FILE=airdrop-amounts-(timestamp).json truffle exec truffle-scripts/airdrop-distribute.js
+```
+The distribution supports failure of one of the transfers. Running the same command again should continue the distribution as the amounts json file is updated every time a transfer is done 
+
