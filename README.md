@@ -44,9 +44,9 @@ truffle exec truffle-scripts/airdrop-save-amounts.js
 
 this creates a file "airdrop-amounts-(timestamp).json" 
 
-2/ Run the distribution 
+2/ Run the distribution (GAS_PRICE_IN_WEI is an optional param, the default is se to 10 GWei ie 10 * 10 ** 9 Wei)
 ```
-AIRDROP_AMOUNTS_FILE=airdrop-amounts-(timestamp).json truffle exec truffle-scripts/airdrop-distribute.js
+AIRDROP_AMOUNTS_FILE=airdrop-amounts-(timestamp).json GAS_PRICE=[GAS_PRICE_IN_WEI] truffle exec truffle-scripts/airdrop-distribute.js
 ```
 The distribution supports failure of one of the transfers. Running the same command again should continue the distribution as the amounts json file is updated every time a transfer is done 
 

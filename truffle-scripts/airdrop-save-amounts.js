@@ -11,7 +11,7 @@ async function run() {
 
   let airdropAmounts = await airdrop.getAirDropAmounts(web3, tokenSaleInstance, tokenInstance);
 
-  let fileName = `./airdrop-amounts-${+new Date()}.json`;
+  let fileName = `airdrop-amounts-${+new Date()}.json`;
   await promisify(fs.writeFile)(fileName, JSON.stringify(airdropAmounts));
   console.log("Airdrop amounts saved to : ", fileName);
 }
