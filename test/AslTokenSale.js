@@ -24,6 +24,8 @@ const TOKEN_RATE_15_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.15);
 const TOKEN_RATE_20_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.2);
 const TOKEN_RATE_30_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.3);
 
+const REFERRAL_BONUS_RATE = new BigNumber(5);
+
 const MAX_TX_GAS_PRICE = new BigNumber(50).mul(GIGA);
 const NEW_MAX_TX_GAS_PRICE = new BigNumber(100).mul(GIGA);
 
@@ -46,11 +48,12 @@ contract('AslTokenSale', async function (accounts) {
   const WALLET_INVESTOR_3 = accounts[6];
   const WALLET_INVESTOR_4 = accounts[7];
   const WALLET_INVESTOR_5 = accounts[8];
+  const WALLET_INVESTOR_6 = accounts[9];
 
   let tokenSaleInstance;
   let tokenInstance;
 
-  async function doBuy(tokenSaleInstance, acc, weiAmount, expectedRate) {
+  async function doBuy(tokenSaleInstance, acc, weiAmount, expectedRate, isReferral) {
     const actualValue = weiAmount.truncated();
 
     const tokenInstance = AslToken.at(await tokenSaleInstance.token());
@@ -63,11 +66,11 @@ contract('AslTokenSale', async function (accounts) {
     await tokenSaleInstance.sendTransaction({ value: actualValue, from: acc });
 
     const tokensBought = actualValue.mul(expectedRate);
+    const tokensReferralBonus = isReferral ? tokensBought.mul(REFERRAL_BONUS_RATE).div(100) : new BigNumber(0);
 
     // check buyer balance is ok
     const postUserTokenBalance = await tokenInstance.balanceOf(acc);
     postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought);
-
 
     // check funds forwarded
     const postFundBalance = web3.eth.getBalance(WALLET_VAULT);
@@ -75,38 +78,42 @@ contract('AslTokenSale', async function (accounts) {
 
     // check total sold is ok
     const postTokensSold = await tokenSaleInstance.tokensSold();
-    postTokensSold.sub(preTokensSold).should.be.bignumber.equal(tokensBought);
+    postTokensSold.sub(preTokensSold).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus));
 
     // check total supply is ok
     const postTotalSupply = await tokenInstance.totalSupply();
-    postTotalSupply.sub(preTotalSupply).should.be.bignumber.equal(tokensBought);
+    postTotalSupply.sub(preTotalSupply).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus));
 
     return tokensBought;
   }
 
   describe('Contract tests', function () {
     it('Should reject deploying the Token Sale contract with no vault wallet', async function () {
-      await AslTokenSale.new(null, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(null, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no airdrop wallet', async function () {
-      await AslTokenSale.new(WALLET_VAULT, null, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, null, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no kyc wallet', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, null, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, null, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no base rate', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, 0, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, 0, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should reject deploying the Token Sale contract with no referral bonus rate', async function () {
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, 0, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no Max Tx Gas Price', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, 0).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, 0).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should deploy the Token Sale contract', async function () {
-      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, MAX_TX_GAS_PRICE);
+      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE);
       tokenInstance = AslToken.at(await tokenSaleInstance.token());
 
       const owner = await tokenSaleInstance.owner();
@@ -120,6 +127,9 @@ contract('AslTokenSale', async function (accounts) {
 
       const tokenBaseRate = await tokenSaleInstance.tokenBaseRate();
       tokenBaseRate.should.be.bignumber.equal(TOKEN_RATE_BASE_RATE);
+
+      const referralBonusRate = await tokenSaleInstance.referralBonusRate();
+      referralBonusRate.should.be.bignumber.equal(REFERRAL_BONUS_RATE);
     });
 
     //
@@ -187,18 +197,98 @@ contract('AslTokenSale', async function (accounts) {
 
     it('Should reserve tokens', async function () {
       let user = WALLET_INVESTOR_5;
-      let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS); // 5 tokens
+      let amount = new BigNumber(7).mul(TO_TOKEN_DECIMALS);
 
       await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER });
 
       const userTokenBalance = await tokenInstance.balanceOf(user);
-      userTokenBalance.should.be.bignumber.equal(amount);
+      userTokenBalance.should.be.bignumber.equal(0);
+
+      const userReservedAmount = await tokenSaleInstance.getReservedAmount(user);
+      userReservedAmount.should.be.bignumber.equal(amount);
+
+      const tokensReserved = await tokenSaleInstance.tokensReserved();
+      tokensReserved.should.be.bignumber.equal(amount);
 
       const tokensSold = await tokenSaleInstance.tokensSold();
-      tokensSold.should.be.bignumber.equal(amount);
+      tokensSold.should.be.bignumber.equal(0);
 
       const postTotalSupply = await tokenInstance.totalSupply();
-      postTotalSupply.should.be.bignumber.equal(amount);
+      postTotalSupply.should.be.bignumber.equal(0);
+    });
+
+    it('Should reserve additional tokens', async function () {
+      let user = WALLET_INVESTOR_5;
+      let amount = new BigNumber(2).mul(TO_TOKEN_DECIMALS);
+
+      await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER });
+
+      const userTokenBalance = await tokenInstance.balanceOf(user);
+      userTokenBalance.should.be.bignumber.equal(0);
+
+      const userReservedAmount = await tokenSaleInstance.getReservedAmount(user);
+      userReservedAmount.should.be.bignumber.equal(new BigNumber(9).mul(TO_TOKEN_DECIMALS));
+
+      const tokensReserved = await tokenSaleInstance.tokensReserved();
+      tokensReserved.should.be.bignumber.equal(new BigNumber(9).mul(TO_TOKEN_DECIMALS));
+
+      const tokensSold = await tokenSaleInstance.tokensSold();
+      tokensSold.should.be.bignumber.equal(0);
+
+      const postTotalSupply = await tokenInstance.totalSupply();
+      postTotalSupply.should.be.bignumber.equal(0);
+    });
+
+    it('cannot cancel more than reserved', async function () {
+      await tokenSaleInstance.cancelReservedTokens(WALLET_INVESTOR_5, new BigNumber(10).mul(TO_TOKEN_DECIMALS), { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should cancel tokens', async function () {
+      let user = WALLET_INVESTOR_5;
+      let amount = new BigNumber(1).mul(TO_TOKEN_DECIMALS);
+
+      await tokenSaleInstance.cancelReservedTokens(user, amount, { from: WALLET_OWNER });
+
+      const userTokenBalance = await tokenInstance.balanceOf(user);
+      userTokenBalance.should.be.bignumber.equal(0);
+
+      const userReservedAmount = await tokenSaleInstance.getReservedAmount(user);
+      userReservedAmount.should.be.bignumber.equal(new BigNumber(8).mul(TO_TOKEN_DECIMALS));
+
+      const tokensReserved = await tokenSaleInstance.tokensReserved();
+      tokensReserved.should.be.bignumber.equal(new BigNumber(8).mul(TO_TOKEN_DECIMALS));
+
+      const tokensSold = await tokenSaleInstance.tokensSold();
+      tokensSold.should.be.bignumber.equal(0);
+
+      const postTotalSupply = await tokenInstance.totalSupply();
+      postTotalSupply.should.be.bignumber.equal(0);
+    });
+
+    it('cannot confirm more than reserved', async function () {
+      await tokenSaleInstance.confirmReservedTokens(WALLET_INVESTOR_5, new BigNumber(10).mul(TO_TOKEN_DECIMALS), { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should confirm reservations', async function () {
+      let user = WALLET_INVESTOR_5;
+      let amount = new BigNumber(5).mul(TO_TOKEN_DECIMALS);
+
+      await tokenSaleInstance.confirmReservedTokens(user, amount, { from: WALLET_OWNER });
+
+      const userTokenBalance = await tokenInstance.balanceOf(user);
+      userTokenBalance.should.be.bignumber.equal(new BigNumber(5).mul(TO_TOKEN_DECIMALS));
+
+      const userReservedAmount = await tokenSaleInstance.getReservedAmount(user);
+      userReservedAmount.should.be.bignumber.equal(new BigNumber(3).mul(TO_TOKEN_DECIMALS));
+
+      const tokensReserved = await tokenSaleInstance.tokensReserved();
+      tokensReserved.should.be.bignumber.equal(new BigNumber(3).mul(TO_TOKEN_DECIMALS));
+
+      const tokensSold = await tokenSaleInstance.tokensSold();
+      tokensSold.should.be.bignumber.equal(new BigNumber(5).mul(TO_TOKEN_DECIMALS));
+
+      const postTotalSupply = await tokenInstance.totalSupply();
+      postTotalSupply.should.be.bignumber.equal(new BigNumber(5).mul(TO_TOKEN_DECIMALS));
     });
 
     it('Should reject reserving more tokens than pre sale cap', async function () {
@@ -470,10 +560,13 @@ contract('AslTokenSale', async function (accounts) {
       await tokenSaleInstance.reserveTokens(user, amount, { from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
     });
 
-    it('Should approve KYC of investor 4', async function () {
-      await tokenSaleInstance.approveUserKYC(WALLET_INVESTOR_4, { from: WALLET_KYC });
+    it('Should approve KYC of investor 4 and set referrer', async function () {
+      await tokenSaleInstance.approveUserKYCAndSetReferrer(WALLET_INVESTOR_4, WALLET_INVESTOR_6, { from: WALLET_KYC });
       const userHasKyc = await tokenSaleInstance.userHasKYC(WALLET_INVESTOR_4);
-      assert.equal(userHasKyc, true, "KYC has not been flagged");
+      assert.equal(userHasKyc, true);
+
+      const userReferrer = await tokenSaleInstance.getUserReferrer(WALLET_INVESTOR_4);
+      assert.equal(userReferrer, WALLET_INVESTOR_6);
     });
 
     it('Should reject buying less than the minimum during the crowd sale', async function () {
@@ -577,8 +670,14 @@ contract('AslTokenSale', async function (accounts) {
       postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought);
     });
 
-    it('Should buy tokens for new investor', async function () {
-      const tokens = await doBuy(tokenSaleInstance, WALLET_INVESTOR_4, new BigNumber(0.5).mul(ONE_ETH), TOKEN_RATE_BASE_RATE);
+    it('Should buy tokens for new investor (referral)', async function () {
+      const tokens = await doBuy(tokenSaleInstance, WALLET_INVESTOR_4, new BigNumber(1).mul(ONE_ETH), TOKEN_RATE_BASE_RATE, true);
+
+      // check balance from referral bonus
+      let buyerBalance = await tokenInstance.balanceOf(WALLET_INVESTOR_4);
+
+      const referrerBalance = await tokenInstance.balanceOf(WALLET_INVESTOR_6);
+      referrerBalance.should.be.bignumber.equal(buyerBalance.mul(REFERRAL_BONUS_RATE).div(100));
     });
 
     it('Should reject buying more than Token Sale cap', async function () {
@@ -601,7 +700,14 @@ contract('AslTokenSale', async function (accounts) {
     // Finished
     //
 
+    it('Should reject calling finishContract() with pending reservations', async function () {
+      await tokenSaleInstance.finishContract({ from: WALLET_OWNER }).should.be.rejectedWith(EVMThrow);
+    });
+
     it('Should call finishContract', async function () {
+      // cancel pending reservation
+      await tokenSaleInstance.cancelReservedTokens(WALLET_INVESTOR_5, new BigNumber(3).mul(TO_TOKEN_DECIMALS), { from: WALLET_OWNER });
+
       const tokensSold = await tokenSaleInstance.tokensSold();
       const unsoldTokens = TOKEN_SALE_TOKEN_CAP.sub(tokensSold).truncated();
       const companyReserveTokens = TOTAL_TOKENS_SUPPLY.sub(TOKEN_SALE_TOKEN_CAP);
@@ -702,13 +808,13 @@ contract('AslTokenSale', async function (accounts) {
     it('Should give the correct list of token owners', async function () {
       ownerAddresses = await airdrop.getFilteredOwnerAddresses(tokenSaleInstance, tokenInstance);
 
-      ownerAddresses.sort().should.deep.equal([WALLET_INVESTOR_1, WALLET_INVESTOR_2, WALLET_INVESTOR_4, WALLET_INVESTOR_5].sort());
+      ownerAddresses.sort().should.deep.equal([WALLET_INVESTOR_1, WALLET_INVESTOR_2, WALLET_INVESTOR_4, WALLET_INVESTOR_5, WALLET_INVESTOR_6].sort());
     });
 
     it('Should give the correct balances', async function () {
       balances = await airdrop.getBalances(tokenInstance, ownerAddresses);
 
-      Object.keys(balances).length.should.equal(4);
+      Object.keys(balances).length.should.equal(5);
 
       initial_inv_1_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_1);
       balances[WALLET_INVESTOR_1].should.be.bignumber.equal(initial_inv_1_balance);
@@ -721,6 +827,9 @@ contract('AslTokenSale', async function (accounts) {
 
       initial_inv_5_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_5);
       balances[WALLET_INVESTOR_5].should.be.bignumber.equal(initial_inv_5_balance);
+
+      initial_inv_6_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_6);
+      balances[WALLET_INVESTOR_6].should.be.bignumber.equal(initial_inv_6_balance);
     });
 
     it('Should give the correct airdrop amounts', async function () {
@@ -729,19 +838,21 @@ contract('AslTokenSale', async function (accounts) {
 
       airdropAmounts = await airdrop.calculateAirDropAmounts(tokenSaleInstance, tokenInstance, balances);
 
-      Object.keys(airdropAmounts).length.should.equal(4);
+      Object.keys(airdropAmounts).length.should.equal(5);
 
       // check new balances
       airdropAmounts[WALLET_INVESTOR_1].target.toNumber().should.equal(initial_inv_1_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
       airdropAmounts[WALLET_INVESTOR_2].target.toNumber().should.equal(initial_inv_2_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
       airdropAmounts[WALLET_INVESTOR_4].target.toNumber().should.equal(initial_inv_4_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
       airdropAmounts[WALLET_INVESTOR_5].target.toNumber().should.equal(initial_inv_5_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
+      airdropAmounts[WALLET_INVESTOR_6].target.toNumber().should.equal(initial_inv_6_balance.div(tokensSold).mul(initialAirdropWalletBalance).truncated().toNumber());
 
       // check totals almost equal (rounding issues, check we're ok to 99.9 % precision)
       airdropAmounts[WALLET_INVESTOR_1].target
         .add(airdropAmounts[WALLET_INVESTOR_2].target)
         .add(airdropAmounts[WALLET_INVESTOR_4].target)
         .add(airdropAmounts[WALLET_INVESTOR_5].target)
+        .add(airdropAmounts[WALLET_INVESTOR_6].target)
         .sub(initialAirdropWalletBalance)
         .div(initialAirdropWalletBalance).toNumber().should.be.below(0.001);
     });
@@ -767,10 +878,13 @@ contract('AslTokenSale', async function (accounts) {
       final_inv_5_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_5);
       final_inv_5_balance.should.be.bignumber.equal(initial_inv_5_balance.add(airdropAmounts[WALLET_INVESTOR_5].target));
 
+      final_inv_6_balance = await tokenInstance.balanceOf(WALLET_INVESTOR_6);
+      final_inv_6_balance.should.be.bignumber.equal(initial_inv_6_balance.add(airdropAmounts[WALLET_INVESTOR_6].target));
+
       let finalAirdropBalance = await tokenInstance.balanceOf(WALLET_AIRDROP);
 
       // check all airdrop distributed (rounding issues, check we're ok to 99.9 % precision)
-        finalAirdropBalance
+      finalAirdropBalance
         .div(initialAirdropWalletBalance).toNumber().should.be.below(0.001);
 
       // check amount distributed makes sense
@@ -780,6 +894,7 @@ contract('AslTokenSale', async function (accounts) {
         .sub(final_inv_2_balance.sub(initial_inv_2_balance))
         .sub(final_inv_4_balance.sub(initial_inv_4_balance))
         .sub(final_inv_5_balance.sub(initial_inv_5_balance))
+        .sub(final_inv_6_balance.sub(initial_inv_6_balance))
         .toNumber().should.equal(0);
     });
 

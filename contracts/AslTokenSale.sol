@@ -7,10 +7,18 @@ contract AslTokenSale is Pausable {
   using SafeMath for uint256;
 
   /**
-  * @dev Supporter struct to allow tracking amount spent by user and if he passed KYC
+  * @dev Supporter struct to allow tracking supporters KYC status and referrer address
   */
   struct Supporter {
-    bool hasKYC; // if the user has passed KYC
+    bool hasKYC;
+    address referrerAddress;
+  }
+
+  /**
+  * @dev External Supporter struct to allow tracking reserved amounts by supporter
+  */
+  struct ExternalSupporter {
+    uint reservedAmount;
   }
 
   /**
@@ -20,11 +28,13 @@ contract AslTokenSale is Pausable {
 
   // Variables
   mapping(address => Supporter) public supportersMap; // Mapping with all the Token Sale participants (Private excluded)
+  mapping(address => ExternalSupporter) public externalSupportersMap; // Mapping with external supporters
   AslToken public token; // ERC20 Token contract address
   address public vaultWallet; // Wallet address to which ETH and Company Reserve Tokens get forwarded
   address public airdropWallet; // Wallet address to which Unsold Tokens get forwarded
   address public kycWallet; // Wallet address for the KYC server
-  uint256 public tokensSold; // How many tokens sold have been sold in total
+  uint256 public tokensSold; // How many tokens have been sold
+  uint256 public tokensReserved; // How many tokens have been reserved
   uint256 public maxTxGasPrice; // Maximum transaction gas price allowed for fair-chance transactions
   TokenSaleState public currentState; // current Sale state
 
@@ -43,6 +53,8 @@ contract AslTokenSale is Pausable {
   /* Rate */
   uint256 public tokenBaseRate; // Base rate
 
+  uint256 public referralBonusRate; // Referral Bonus Rate (5 for 5% bonus for example)
+
   /**
     * @dev Modifier to only allow Owner or KYC Wallet to execute a function
     */
@@ -60,11 +72,25 @@ contract AslTokenSale is Pausable {
   event TokenPurchase(address indexed purchaser, uint256 value, uint256 amount);
 
   /**
-  * Event for tokens reserved
+  * Event for token reservation 
   * @param wallet The beneficiary wallet address
-  * @param amount The amount of tokens sent
+  * @param amount The amount of tokens
   */
-  event TokensReserved(address indexed wallet, uint256 amount);
+  event TokenReservation(address indexed wallet, uint256 amount);
+
+  /**
+  * Event for token reservation confirmation
+  * @param wallet The beneficiary wallet address
+  * @param amount The amount of tokens
+  */
+  event TokenReservationConfirmation(address indexed wallet, uint256 amount);
+
+  /**
+  * Event for token reservation cancellation
+  * @param wallet The beneficiary wallet address
+  * @param amount The amount of tokens
+  */
+  event TokenReservationCancellation(address indexed wallet, uint256 amount);
 
   /**
    * Event for kyc status change logging
@@ -72,6 +98,20 @@ contract AslTokenSale is Pausable {
    * @param isApproved KYC approval state
    */
   event KYC(address indexed user, bool isApproved);
+
+  /**
+   * Event for referrer set
+   * @param user User address
+   * @param referrerAddress Referrer address
+   */
+  event ReferrerSet(address indexed user, address indexed referrerAddress);
+
+  /**
+   * Event for referrer set
+   * @param referrerAddress Referrer address
+   * @param missingAmount Missing Amount
+   */
+  event ReferralBonusIncomplete(address indexed referrerAddress, uint missingAmount);
 
   /**
    * Constructor
@@ -86,6 +126,7 @@ contract AslTokenSale is Pausable {
     address _airdropWallet,
     address _kycWallet,
     uint256 _tokenBaseRate,
+    uint256 _referralBonusRate,
     uint256 _maxTxGasPrice
   )
   public
@@ -94,12 +135,14 @@ contract AslTokenSale is Pausable {
     require(_airdropWallet != address(0));
     require(_kycWallet != address(0));
     require(_tokenBaseRate > 0);
+    require(_referralBonusRate > 0);
     require(_maxTxGasPrice > 0);
 
     vaultWallet = _vaultWallet;
     airdropWallet = _airdropWallet;
     kycWallet = _kycWallet;
     tokenBaseRate = _tokenBaseRate;
+    referralBonusRate = _referralBonusRate;
     maxTxGasPrice = _maxTxGasPrice;
 
     token = new AslToken();
@@ -137,7 +180,7 @@ contract AslTokenSale is Pausable {
     uint256 newTokens = weiAmountSent.mul(tokenBaseRate).mul(bonusMultiplier).div(100);
 
     // check totals and mint the tokens
-    checkTotalsAndMintTokens(sender, newTokens);
+    checkTotalsAndMintTokens(sender, newTokens, false);
 
     // Log Event
     TokenPurchase(sender, weiAmountSent, newTokens);
@@ -160,11 +203,69 @@ contract AslTokenSale is Pausable {
     // make sure that we're in private sale or presale
     require(isPrivateSaleRunning() || isPreSaleRunning());
 
-    // check totals and mint the tokens
-    checkTotalsAndMintTokens(_wallet, _amount);
+    // check cap
+    uint256 totalTokensReserved = tokensReserved.add(_amount);
+    require(tokensSold + totalTokensReserved <= PRE_SALE_TOKEN_CAP);
+
+    // update total reserved
+    tokensReserved = totalTokensReserved;
+
+    // save user reservation
+    externalSupportersMap[_wallet].reservedAmount = externalSupportersMap[_wallet].reservedAmount.add(_amount);
 
     // Log Event
-    TokensReserved(_wallet, _amount);
+    TokenReservation(_wallet, _amount);
+  }
+
+  /**
+  * @dev Confirm Reserved Tokens
+  * @param _wallet Destination Address
+  * @param _amount Amount of tokens
+  */
+  function confirmReservedTokens(address _wallet, uint _amount) public onlyOwner {
+    // check amount positive
+    require(_amount > 0);
+    // check destination address not null
+    require(_wallet != address(0));
+
+    // make sure the sale hasn't ended yet
+    require(!hasEnded());
+
+    // check amount not more than reserved
+    require(_amount <= externalSupportersMap[_wallet].reservedAmount);
+
+    // check totals and mint the tokens
+    checkTotalsAndMintTokens(_wallet, _amount, true);
+
+    // Log Event
+    TokenReservationConfirmation(_wallet, _amount);
+  }
+
+  /**
+   * @dev Cancel Reserved Tokens
+   * @param _wallet Destination Address
+   * @param _amount Amount of tokens
+   */
+  function cancelReservedTokens(address _wallet, uint _amount) public onlyOwner {
+    // check amount positive
+    require(_amount > 0);
+    // check destination address not null
+    require(_wallet != address(0));
+
+    // make sure the sale hasn't ended yet
+    require(!hasEnded());
+
+    // check amount not more than reserved
+    require(_amount <= externalSupportersMap[_wallet].reservedAmount);
+
+    // update total reserved
+    tokensReserved = tokensReserved.sub(_amount);
+
+    // update user reservation
+    externalSupportersMap[_wallet].reservedAmount = externalSupportersMap[_wallet].reservedAmount.sub(_amount);
+
+    // Log Event
+    TokenReservationCancellation(_wallet, _amount);
   }
 
   /**
@@ -172,20 +273,73 @@ contract AslTokenSale is Pausable {
   * @param _wallet Destination Address
   * @param _amount Amount of tokens
   */
-  function checkTotalsAndMintTokens(address _wallet, uint _amount) private {
+  function checkTotalsAndMintTokens(address _wallet, uint _amount, bool _fromReservation) private {
     // check that we have not yet reached the cap
     uint256 totalTokensSold = tokensSold.add(_amount);
+
+    uint totalTokensReserved = tokensReserved;
+    if (_fromReservation) {
+      totalTokensReserved = totalTokensReserved.sub(_amount);
+    }
+
     if (isMainSaleRunning()) {
-      require(totalTokensSold <= TOKEN_SALE_CAP);
+      require(totalTokensSold + totalTokensReserved <= TOKEN_SALE_CAP);
     } else {
-      require(totalTokensSold <= PRE_SALE_TOKEN_CAP);
+      require(totalTokensSold + totalTokensReserved <= PRE_SALE_TOKEN_CAP);
     }
 
     // update contract state
     tokensSold = totalTokensSold;
 
+    if (_fromReservation) {
+      externalSupportersMap[_wallet].reservedAmount = externalSupportersMap[_wallet].reservedAmount.sub(_amount);
+      tokensReserved = totalTokensReserved;
+    }
+
     // mint the tokens
     token.mint(_wallet, _amount);
+
+    if (getUserReferrer(_wallet) != address(0)) {
+      mintReferrerShare(_amount, getUserReferrer(_wallet));
+    }
+  }
+
+  /**
+   * @dev Mint Referrer Share
+   * @param _amount Amount of tokens
+   * @param _referrerAddress Referrer Address
+   */
+  function mintReferrerShare(uint _amount, address _referrerAddress) private {
+    // calculate max tokens available
+    uint currentCap;
+
+    if (isMainSaleRunning()) {
+      currentCap = TOKEN_SALE_CAP;
+    } else {
+      currentCap = PRE_SALE_TOKEN_CAP;
+    }
+
+    uint maxTokensAvailable = currentCap - tokensSold - tokensReserved;
+
+    // check if we have enough tokens
+    uint fullReferrerShare = _amount.mul(referralBonusRate).div(100);
+    if (fullReferrerShare <= maxTokensAvailable) {
+      // mint the tokens
+      token.mint(_referrerAddress, fullReferrerShare);
+
+      // update state
+      tokensSold = tokensSold.add(fullReferrerShare);
+    }
+    else {
+      // mint the available tokens
+      token.mint(_referrerAddress, maxTokensAvailable);
+
+      // update state
+      tokensSold = tokensSold.add(maxTokensAvailable);
+
+      // log event
+      ReferralBonusIncomplete(_referrerAddress, fullReferrerShare - maxTokensAvailable);
+    }
   }
 
   /**
@@ -238,6 +392,9 @@ contract AslTokenSale is Pausable {
   function finishContract() public onlyOwner {
     // make sure we're in the main sale
     require(currentState == TokenSaleState.Main);
+
+    // make sure there are no pending reservations
+    require(tokensReserved == 0);
 
     // mark sale as finished
     currentState = TokenSaleState.Finished;
@@ -300,6 +457,22 @@ contract AslTokenSale is Pausable {
     KYC(_user, false);
   }
 
+  /**
+   * @dev Approve user's KYC and sets referrer
+   * @param _user User Address
+   * @param _referrerAddress Referrer Address
+   */
+  function approveUserKYCAndSetReferrer(address _user, address _referrerAddress) onlyOwnerOrKYCWallet public {
+    require(_user != address(0));
+
+    Supporter storage sup = supportersMap[_user];
+    sup.hasKYC = true;
+    sup.referrerAddress = _referrerAddress;
+
+    // log events
+    KYC(_user, true);
+    ReferrerSet(_user, _referrerAddress);
+  }
 
   /**
   * @dev check if private sale is running
@@ -342,6 +515,22 @@ contract AslTokenSale is Pausable {
   */
   function userHasKYC(address _user) public view returns (bool) {
     return supportersMap[_user].hasKYC;
+  }
+
+  /**
+  * @dev Get User's referrer address
+  * @param _user User Address
+  */
+  function getUserReferrer(address _user) public view returns (address) {
+    return supportersMap[_user].referrerAddress;
+  }
+
+  /**
+  * @dev Get User's reserved amount
+  * @param _user User Address
+  */
+  function getReservedAmount(address _user) public view returns (uint) {
+    return externalSupportersMap[_user].reservedAmount;
   }
 
   /**
