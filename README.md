@@ -50,3 +50,8 @@ AIRDROP_AMOUNTS_FILE=airdrop-amounts-(timestamp).json GAS_PRICE=[GAS_PRICE_IN_WE
 ```
 The distribution supports failure of one of the transfers. Running the same command again should continue the distribution as the amounts json file is updated every time a transfer is done 
 
+## Check pending reservations
+
+```
+truffle exec truffle-scripts/check-pending-reservations.js 
+```
