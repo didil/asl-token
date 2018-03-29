@@ -114,6 +114,13 @@ contract AslTokenSale is Pausable {
   event ReferralBonusIncomplete(address indexed referrerAddress, uint missingAmount);
 
   /**
+   * Event for referrer bonus minted
+   * @param referrerAddress Referrer address
+   * @param amount Amount minted
+   */
+  event ReferralBonusMinted(address indexed referrerAddress, uint amount);
+
+  /**
    * Constructor
    * @param _vaultWallet Vault address
    * @param _airdropWallet Airdrop wallet address
@@ -299,8 +306,10 @@ contract AslTokenSale is Pausable {
     // mint the tokens
     token.mint(_wallet, _amount);
 
-    if (getUserReferrer(_wallet) != address(0)) {
-      mintReferrerShare(_amount, getUserReferrer(_wallet));
+    address userReferrer = getUserReferrer(_wallet);
+
+    if (userReferrer != address(0)) {
+      mintReferrerShare(_amount, userReferrer);
     }
   }
 
@@ -329,6 +338,9 @@ contract AslTokenSale is Pausable {
 
       // update state
       tokensSold = tokensSold.add(fullReferrerShare);
+
+      // log event
+      ReferralBonusMinted(_referrerAddress, fullReferrerShare);
     }
     else {
       // mint the available tokens
@@ -337,7 +349,9 @@ contract AslTokenSale is Pausable {
       // update state
       tokensSold = tokensSold.add(maxTokensAvailable);
 
-      // log event
+      // log events
+
+      ReferralBonusMinted(_referrerAddress, maxTokensAvailable);
       ReferralBonusIncomplete(_referrerAddress, fullReferrerShare - maxTokensAvailable);
     }
   }
