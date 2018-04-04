@@ -53,7 +53,7 @@ contract('AslTokenSale', async function (accounts) {
   let tokenSaleInstance;
   let tokenInstance;
 
-  async function doBuy(tokenSaleInstance, acc, weiAmount, expectedRate, isReferral) {
+  async function doBuy(tokenSaleInstance, acc, weiAmount, expectedRate, referrer) {
     const actualValue = weiAmount.truncated();
 
     const tokenInstance = AslToken.at(await tokenSaleInstance.token());
@@ -62,15 +62,25 @@ contract('AslTokenSale', async function (accounts) {
     const preFundBalance = web3.eth.getBalance(WALLET_VAULT);
     const preTokensSold = await tokenSaleInstance.tokensSold();
     const preTotalSupply = await tokenInstance.totalSupply();
+    let preReferrerTokenBalance;
+    if (referrer){
+      preReferrerTokenBalance = await tokenInstance.balanceOf(referrer);
+    }
 
     await tokenSaleInstance.sendTransaction({ value: actualValue, from: acc });
 
     const tokensBought = actualValue.mul(expectedRate);
-    const tokensReferralBonus = isReferral ? tokensBought.mul(REFERRAL_BONUS_RATE).div(100) : new BigNumber(0);
+    const tokensReferralBonus = referrer ? tokensBought.mul(REFERRAL_BONUS_RATE).div(100) : new BigNumber(0);
 
     // check buyer balance is ok
     const postUserTokenBalance = await tokenInstance.balanceOf(acc);
-    postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought);
+    postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus.div(2)));
+
+    // check referrer balance
+    if(referrer){
+      let postReferrerTokenBalance  = await tokenInstance.balanceOf(referrer);
+      postReferrerTokenBalance.sub(preReferrerTokenBalance).should.be.bignumber.equal(tokensReferralBonus.div(2));
+    }
 
     // check funds forwarded
     const postFundBalance = web3.eth.getBalance(WALLET_VAULT);
@@ -671,13 +681,7 @@ contract('AslTokenSale', async function (accounts) {
     });
 
     it('Should buy tokens for new investor (referral)', async function () {
-      const tokens = await doBuy(tokenSaleInstance, WALLET_INVESTOR_4, new BigNumber(1).mul(ONE_ETH), TOKEN_RATE_BASE_RATE, true);
-
-      // check balance from referral bonus
-      let buyerBalance = await tokenInstance.balanceOf(WALLET_INVESTOR_4);
-
-      const referrerBalance = await tokenInstance.balanceOf(WALLET_INVESTOR_6);
-      referrerBalance.should.be.bignumber.equal(buyerBalance.mul(REFERRAL_BONUS_RATE).div(100));
+      const tokens = await doBuy(tokenSaleInstance, WALLET_INVESTOR_4, new BigNumber(8).mul(ONE_ETH), TOKEN_RATE_BASE_RATE, WALLET_INVESTOR_6);
     });
 
     it('Should reject buying more than Token Sale cap', async function () {

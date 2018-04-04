@@ -107,18 +107,18 @@ contract AslTokenSale is Pausable {
   event ReferrerSet(address indexed user, address indexed referrerAddress);
 
   /**
-   * Event for referrer set
-   * @param referrerAddress Referrer address
+   * Event for referral bonus incomplete
+   * @param userAddress User address
    * @param missingAmount Missing Amount
    */
-  event ReferralBonusIncomplete(address indexed referrerAddress, uint missingAmount);
+  event ReferralBonusIncomplete(address indexed userAddress, uint missingAmount);
 
   /**
-   * Event for referrer bonus minted
-   * @param referrerAddress Referrer address
+   * Event for referral bonus minted
+   * @param userAddress User address
    * @param amount Amount minted
    */
-  event ReferralBonusMinted(address indexed referrerAddress, uint amount);
+  event ReferralBonusMinted(address indexed userAddress, uint amount);
 
   /**
    * Constructor
@@ -309,16 +309,20 @@ contract AslTokenSale is Pausable {
     address userReferrer = getUserReferrer(_wallet);
 
     if (userReferrer != address(0)) {
-      mintReferrerShare(_amount, userReferrer);
+      // Mint Refferer bonus
+      mintReferralShare(_amount, userReferrer);
+
+      // Mint Reffered bonus
+      mintReferralShare(_amount, _wallet);
     }
   }
 
   /**
-   * @dev Mint Referrer Share
+   * @dev Mint Referral Share
    * @param _amount Amount of tokens
-   * @param _referrerAddress Referrer Address
+   * @param _userAddress User Address
    */
-  function mintReferrerShare(uint _amount, address _referrerAddress) private {
+  function mintReferralShare(uint _amount, address _userAddress) private {
     // calculate max tokens available
     uint currentCap;
 
@@ -330,29 +334,29 @@ contract AslTokenSale is Pausable {
 
     uint maxTokensAvailable = currentCap - tokensSold - tokensReserved;
 
-    // check if we have enough tokens
-    uint fullReferrerShare = _amount.mul(referralBonusRate).div(100);
-    if (fullReferrerShare <= maxTokensAvailable) {
+    // check if we have enough tokens (referrer/referred gets half of the bonus)
+    uint fullShare = _amount.mul(referralBonusRate).div(2).div(100);
+    if (fullShare <= maxTokensAvailable) {
       // mint the tokens
-      token.mint(_referrerAddress, fullReferrerShare);
+      token.mint(_userAddress, fullShare);
 
       // update state
-      tokensSold = tokensSold.add(fullReferrerShare);
+      tokensSold = tokensSold.add(fullShare);
 
       // log event
-      ReferralBonusMinted(_referrerAddress, fullReferrerShare);
+      ReferralBonusMinted(_userAddress, fullShare);
     }
     else {
       // mint the available tokens
-      token.mint(_referrerAddress, maxTokensAvailable);
+      token.mint(_userAddress, maxTokensAvailable);
 
       // update state
       tokensSold = tokensSold.add(maxTokensAvailable);
 
       // log events
 
-      ReferralBonusMinted(_referrerAddress, maxTokensAvailable);
-      ReferralBonusIncomplete(_referrerAddress, fullReferrerShare - maxTokensAvailable);
+      ReferralBonusMinted(_userAddress, maxTokensAvailable);
+      ReferralBonusIncomplete(_userAddress, fullShare - maxTokensAvailable);
     }
   }
 
