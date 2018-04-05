@@ -24,7 +24,8 @@ const TOKEN_RATE_15_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.15);
 const TOKEN_RATE_20_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.2);
 const TOKEN_RATE_30_PERCENT_BONUS = TOKEN_RATE_BASE_RATE.mul(1.3);
 
-const REFERRAL_BONUS_RATE = new BigNumber(5);
+const REFERRER_BONUS_RATE = new BigNumber(350);
+const REFERRED_BONUS_RATE = new BigNumber(150);
 
 const MAX_TX_GAS_PRICE = new BigNumber(50).mul(GIGA);
 const NEW_MAX_TX_GAS_PRICE = new BigNumber(100).mul(GIGA);
@@ -70,16 +71,17 @@ contract('AslTokenSale', async function (accounts) {
     await tokenSaleInstance.sendTransaction({ value: actualValue, from: acc });
 
     const tokensBought = actualValue.mul(expectedRate);
-    const tokensReferralBonus = referrer ? tokensBought.mul(REFERRAL_BONUS_RATE).div(100) : new BigNumber(0);
+    const tokensReferrerBonus = referrer ? tokensBought.mul(REFERRER_BONUS_RATE).div(10000) : new BigNumber(0);
+    const tokensReferredBonus = referrer ? tokensBought.mul(REFERRED_BONUS_RATE).div(10000) : new BigNumber(0);
 
     // check buyer balance is ok
     const postUserTokenBalance = await tokenInstance.balanceOf(acc);
-    postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus.div(2)));
+    postUserTokenBalance.sub(preUserTokenBalance).should.be.bignumber.equal(tokensBought.add(tokensReferredBonus));
 
     // check referrer balance
     if(referrer){
       let postReferrerTokenBalance  = await tokenInstance.balanceOf(referrer);
-      postReferrerTokenBalance.sub(preReferrerTokenBalance).should.be.bignumber.equal(tokensReferralBonus.div(2));
+      postReferrerTokenBalance.sub(preReferrerTokenBalance).should.be.bignumber.equal(tokensReferrerBonus);
     }
 
     // check funds forwarded
@@ -88,42 +90,46 @@ contract('AslTokenSale', async function (accounts) {
 
     // check total sold is ok
     const postTokensSold = await tokenSaleInstance.tokensSold();
-    postTokensSold.sub(preTokensSold).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus));
+    postTokensSold.sub(preTokensSold).should.be.bignumber.equal(tokensBought.add(tokensReferrerBonus).add(tokensReferredBonus));
 
     // check total supply is ok
     const postTotalSupply = await tokenInstance.totalSupply();
-    postTotalSupply.sub(preTotalSupply).should.be.bignumber.equal(tokensBought.add(tokensReferralBonus));
+    postTotalSupply.sub(preTotalSupply).should.be.bignumber.equal(tokensBought.add(tokensReferrerBonus).add(tokensReferredBonus));
 
     return tokensBought;
   }
 
   describe('Contract tests', function () {
     it('Should reject deploying the Token Sale contract with no vault wallet', async function () {
-      await AslTokenSale.new(null, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(null, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no airdrop wallet', async function () {
-      await AslTokenSale.new(WALLET_VAULT, null, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, null, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no kyc wallet', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, null, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, null, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no base rate', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, 0, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, 0, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
-    it('Should reject deploying the Token Sale contract with no referral bonus rate', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, 0, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    it('Should reject deploying the Token Sale contract with no referrer bonus rate', async function () {
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, 0,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
+    });
+
+    it('Should reject deploying the Token Sale contract with no referred bonus rate', async function () {
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,0, MAX_TX_GAS_PRICE).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should reject deploying the Token Sale contract with no Max Tx Gas Price', async function () {
-      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, 0).should.be.rejectedWith(EVMThrow);
+      await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, 0).should.be.rejectedWith(EVMThrow);
     });
 
     it('Should deploy the Token Sale contract', async function () {
-      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRAL_BONUS_RATE, MAX_TX_GAS_PRICE);
+      tokenSaleInstance = await AslTokenSale.new(WALLET_VAULT, WALLET_AIRDROP, WALLET_KYC, TOKEN_RATE_BASE_RATE, REFERRER_BONUS_RATE,REFERRED_BONUS_RATE, MAX_TX_GAS_PRICE);
       tokenInstance = AslToken.at(await tokenSaleInstance.token());
 
       const owner = await tokenSaleInstance.owner();
@@ -138,8 +144,11 @@ contract('AslTokenSale', async function (accounts) {
       const tokenBaseRate = await tokenSaleInstance.tokenBaseRate();
       tokenBaseRate.should.be.bignumber.equal(TOKEN_RATE_BASE_RATE);
 
-      const referralBonusRate = await tokenSaleInstance.referralBonusRate();
-      referralBonusRate.should.be.bignumber.equal(REFERRAL_BONUS_RATE);
+      const referrerBonusRate = await tokenSaleInstance.referrerBonusRate();
+      referrerBonusRate.should.be.bignumber.equal(REFERRER_BONUS_RATE);
+      
+      const referredBonusRate = await tokenSaleInstance.referredBonusRate();
+      referredBonusRate.should.be.bignumber.equal(REFERRED_BONUS_RATE);
     });
 
     //
@@ -190,6 +199,16 @@ contract('AslTokenSale', async function (accounts) {
       await tokenSaleInstance.updateKYCWallet(WALLET_KYC, { from: WALLET_OWNER });
       kycWallet = await tokenSaleInstance.kycWallet();
       assert.equal(kycWallet, WALLET_KYC, "KYC not set properly");
+    });
+
+    it('switch Vault wallet to owner and back', async function () {
+      await tokenSaleInstance.updateVaultWallet(WALLET_OWNER, { from: WALLET_OWNER });
+      let vaultWallet = await tokenSaleInstance.vaultWallet();
+      assert.equal(vaultWallet, WALLET_OWNER, "Vault not set properly");
+
+      await tokenSaleInstance.updateVaultWallet(WALLET_VAULT, { from: WALLET_OWNER });
+      vaultWallet = await tokenSaleInstance.vaultWallet();
+      assert.equal(vaultWallet, WALLET_VAULT, "Vault not set properly");
     });
 
     it('Should reject buying before presale', async function () {

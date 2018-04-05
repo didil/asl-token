@@ -28,9 +28,9 @@ Run tests
 truffle test
 ```
 
-To deploy to Testnet/Mainnet, set the proper network settings in truffle.js, then for example for kovan (replace MY_VAULT_ADDRESS, MY_AIRDROP_ADDRESS, MY_KYC_ADDRESS, TOKEN_BASE_RATE and REFERRAL_BONUS_RATE with the actual values)
+To deploy to Testnet/Mainnet, set the proper network settings in truffle.js, then for example for kovan (replace MY_VAULT_ADDRESS, MY_AIRDROP_ADDRESS, MY_KYC_ADDRESS, TOKEN_BASE_RATE, REFERRER_BONUS_RATE and REFERRED_BONUS_RATE with the actual values)
 ```
-VAULT_ADDRESS=MY_VAULT_ADDRESS AIRDROP_ADDRESS=MY_AIRDROP_ADDRESS KYC_ADDRESS=MY_KYC_ADDRESS TOKEN_BASE_RATE=MY_TOKEN_BASE_RATE REFERRAL_BONUS_RATE=MY_REFERRAL_BONUS_RATE truffle migrate --network=kovan
+VAULT_ADDRESS=MY_VAULT_ADDRESS AIRDROP_ADDRESS=MY_AIRDROP_ADDRESS KYC_ADDRESS=MY_KYC_ADDRESS TOKEN_BASE_RATE=MY_TOKEN_BASE_RATE REFERRER_BONUS_RATE=MY_REFERRER_BONUS_RATE REFERRED_BONUS_RATE=MY_REFERRED_BONUS_RATE truffle migrate --network=kovan
 ```
 
 

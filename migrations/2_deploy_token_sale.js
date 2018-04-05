@@ -31,13 +31,19 @@ module.exports = function (deployer, network) {
   }
   console.log("Using Token Base Rate:", tokenBaseRate);
 
-  let referralBonusRate = parseInt(process.env.REFERRAL_BONUS_RATE, 10);
-  if (!referralBonusRate) {
-    throw new Error("Referral Bonus Rate not set");
+  let referrerBonusRate = parseInt(process.env.REFERRER_BONUS_RATE, 10);
+  if (!referrerBonusRate) {
+    throw new Error("Referrer Bonus Rate not set");
   }
-  console.log("Using Referral Bonus Rate:", referralBonusRate);
+  console.log("Using Referrer Bonus Rate:", referrerBonusRate);
+
+  let referredBonusRate = parseInt(process.env.REFERRED_BONUS_RATE, 10);
+  if (!referredBonusRate) {
+    throw new Error("Referred Bonus Rate not set");
+  }
+  console.log("Using Referred Bonus Rate:", referredBonusRate);
 
   let maxTxGasPrice = 50 * 10 ** 9; // 50 GWei
 
-  return deployer.deploy(AslTokenSale, vaultAddress, airdropAddress, kycAddress, tokenBaseRate, referralBonusRate, maxTxGasPrice);
+  return deployer.deploy(AslTokenSale, vaultAddress, airdropAddress, kycAddress, tokenBaseRate, referrerBonusRate, referredBonusRate, maxTxGasPrice);
 };

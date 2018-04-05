@@ -18,7 +18,7 @@ contract AslTokenSale is Pausable {
   * @dev External Supporter struct to allow tracking reserved amounts by supporter
   */
   struct ExternalSupporter {
-    uint reservedAmount;
+    uint256 reservedAmount;
   }
 
   /**
@@ -53,7 +53,8 @@ contract AslTokenSale is Pausable {
   /* Rate */
   uint256 public tokenBaseRate; // Base rate
 
-  uint256 public referralBonusRate; // Referral Bonus Rate (5 for 5% bonus for example)
+  uint256 public referrerBonusRate; // Referrer Bonus Rate with 2 decimals (250 for 2.5% bonus for example)
+  uint256 public referredBonusRate; // Referred Bonus Rate with 2 decimals (250 for 2.5% bonus for example)
 
   /**
     * @dev Modifier to only allow Owner or KYC Wallet to execute a function
@@ -111,14 +112,14 @@ contract AslTokenSale is Pausable {
    * @param userAddress User address
    * @param missingAmount Missing Amount
    */
-  event ReferralBonusIncomplete(address indexed userAddress, uint missingAmount);
+  event ReferralBonusIncomplete(address indexed userAddress, uint256 missingAmount);
 
   /**
    * Event for referral bonus minted
    * @param userAddress User address
    * @param amount Amount minted
    */
-  event ReferralBonusMinted(address indexed userAddress, uint amount);
+  event ReferralBonusMinted(address indexed userAddress, uint256 amount);
 
   /**
    * Constructor
@@ -126,6 +127,8 @@ contract AslTokenSale is Pausable {
    * @param _airdropWallet Airdrop wallet address
    * @param _kycWallet KYC address
    * @param _tokenBaseRate Token Base rate (Tokens/ETH)
+   * @param _referrerBonusRate Referrer Bonus rate (2 decimals, ex 250 for 2.5%)
+   * @param _referredBonusRate Referred Bonus rate (2 decimals, ex 250 for 2.5%)
    * @param _maxTxGasPrice Maximum gas price allowed when buying tokens
    */
   function AslTokenSale(
@@ -133,7 +136,8 @@ contract AslTokenSale is Pausable {
     address _airdropWallet,
     address _kycWallet,
     uint256 _tokenBaseRate,
-    uint256 _referralBonusRate,
+    uint256 _referrerBonusRate,
+    uint256 _referredBonusRate,
     uint256 _maxTxGasPrice
   )
   public
@@ -142,14 +146,16 @@ contract AslTokenSale is Pausable {
     require(_airdropWallet != address(0));
     require(_kycWallet != address(0));
     require(_tokenBaseRate > 0);
-    require(_referralBonusRate > 0);
+    require(_referrerBonusRate > 0);
+    require(_referredBonusRate > 0);
     require(_maxTxGasPrice > 0);
 
     vaultWallet = _vaultWallet;
     airdropWallet = _airdropWallet;
     kycWallet = _kycWallet;
     tokenBaseRate = _tokenBaseRate;
-    referralBonusRate = _referralBonusRate;
+    referrerBonusRate = _referrerBonusRate;
+    referredBonusRate = _referredBonusRate;
     maxTxGasPrice = _maxTxGasPrice;
 
     token = new AslToken();
@@ -201,7 +207,7 @@ contract AslTokenSale is Pausable {
   * @param _wallet Destination Address
   * @param _amount Amount of tokens
   */
-  function reserveTokens(address _wallet, uint _amount) public onlyOwner {
+  function reserveTokens(address _wallet, uint256 _amount) public onlyOwner {
     // check amount positive
     require(_amount > 0);
     // check destination address not null
@@ -229,7 +235,7 @@ contract AslTokenSale is Pausable {
   * @param _wallet Destination Address
   * @param _amount Amount of tokens
   */
-  function confirmReservedTokens(address _wallet, uint _amount) public onlyOwner {
+  function confirmReservedTokens(address _wallet, uint256 _amount) public onlyOwner {
     // check amount positive
     require(_amount > 0);
     // check destination address not null
@@ -253,7 +259,7 @@ contract AslTokenSale is Pausable {
    * @param _wallet Destination Address
    * @param _amount Amount of tokens
    */
-  function cancelReservedTokens(address _wallet, uint _amount) public onlyOwner {
+  function cancelReservedTokens(address _wallet, uint256 _amount) public onlyOwner {
     // check amount positive
     require(_amount > 0);
     // check destination address not null
@@ -280,11 +286,11 @@ contract AslTokenSale is Pausable {
   * @param _wallet Destination Address
   * @param _amount Amount of tokens
   */
-  function checkTotalsAndMintTokens(address _wallet, uint _amount, bool _fromReservation) private {
+  function checkTotalsAndMintTokens(address _wallet, uint256 _amount, bool _fromReservation) private {
     // check that we have not yet reached the cap
     uint256 totalTokensSold = tokensSold.add(_amount);
 
-    uint totalTokensReserved = tokensReserved;
+    uint256 totalTokensReserved = tokensReserved;
     if (_fromReservation) {
       totalTokensReserved = totalTokensReserved.sub(_amount);
     }
@@ -309,11 +315,11 @@ contract AslTokenSale is Pausable {
     address userReferrer = getUserReferrer(_wallet);
 
     if (userReferrer != address(0)) {
-      // Mint Refferer bonus
-      mintReferralShare(_amount, userReferrer);
+      // Mint Referrer bonus
+      mintReferralShare(_amount, userReferrer, referrerBonusRate);
 
-      // Mint Reffered bonus
-      mintReferralShare(_amount, _wallet);
+      // Mint Referred bonus
+      mintReferralShare(_amount, _wallet, referredBonusRate);
     }
   }
 
@@ -321,10 +327,11 @@ contract AslTokenSale is Pausable {
    * @dev Mint Referral Share
    * @param _amount Amount of tokens
    * @param _userAddress User Address
+   * @param _bonusRate Bonus rate (2 decimals)
    */
-  function mintReferralShare(uint _amount, address _userAddress) private {
+  function mintReferralShare(uint256 _amount, address _userAddress, uint256 _bonusRate) private {
     // calculate max tokens available
-    uint currentCap;
+    uint256 currentCap;
 
     if (isMainSaleRunning()) {
       currentCap = TOKEN_SALE_CAP;
@@ -332,10 +339,10 @@ contract AslTokenSale is Pausable {
       currentCap = PRE_SALE_TOKEN_CAP;
     }
 
-    uint maxTokensAvailable = currentCap - tokensSold - tokensReserved;
+    uint256 maxTokensAvailable = currentCap - tokensSold - tokensReserved;
 
-    // check if we have enough tokens (referrer/referred gets half of the bonus)
-    uint fullShare = _amount.mul(referralBonusRate).div(2).div(100);
+    // check if we have enough tokens
+    uint256 fullShare = _amount.mul(_bonusRate).div(10000);
     if (fullShare <= maxTokensAvailable) {
       // mint the tokens
       token.mint(_userAddress, fullShare);
@@ -443,6 +450,15 @@ contract AslTokenSale is Pausable {
   }
 
   /**
+   * @dev Updates the Vault Wallet address
+   * @param _vaultWallet The new vault wallet
+   */
+  function updateVaultWallet(address _vaultWallet) public onlyOwner {
+    require(_vaultWallet != address(0));
+    vaultWallet = _vaultWallet;
+  }
+
+  /**
    * @dev Updates the KYC Wallet address
    * @param _kycWallet The new kyc wallet
    */
@@ -547,7 +563,7 @@ contract AslTokenSale is Pausable {
   * @dev Get User's reserved amount
   * @param _user User Address
   */
-  function getReservedAmount(address _user) public view returns (uint) {
+  function getReservedAmount(address _user) public view returns (uint256) {
     return externalSupportersMap[_user].reservedAmount;
   }
 
