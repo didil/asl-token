@@ -158,6 +158,9 @@ contract AslTokenSale is Pausable {
     referredBonusRate = _referredBonusRate;
     maxTxGasPrice = _maxTxGasPrice;
 
+    tokensSold = 0;
+    tokensReserved = 0;
+
     token = new AslToken();
 
     // init sale state;
